@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+pydantic
+supabase
+openai
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+python-dotenv
+pdfplumber
+beautifulsoup4
+requests
+python-multipart
