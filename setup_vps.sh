@@ -36,15 +36,10 @@ if ! command -v pm2 &>/dev/null; then
   pm2 startup
 fi
 
-# ── 4. Clone repo ───────────────────────────────────────────
-echo "📥 Cloning repository..."
-if [ -d "$APP_DIR" ]; then
-  echo "   Directory exists, pulling latest..."
-  cd "$APP_DIR" && git pull origin main
-else
-  git clone "$REPO_URL" "$APP_DIR"
-fi
-cd "$APP_DIR"
+# ── 4. Set App Directory ───────────────────────────────────────────
+echo "📥 Using current directory as APP_DIR..."
+APP_DIR=$(pwd)
+echo "APP_DIR set to $APP_DIR"
 
 # ── 5. Backend setup ────────────────────────────────────────
 echo "🐍 Setting up Python backend..."
@@ -63,9 +58,9 @@ EOF
   echo "⚠️  Created backend/.env — fill in your secrets!"
 fi
 
-# Start backend with PM2
+# Start backend with PM2 on port 9090
 pm2 delete persona-backend 2>/dev/null || true
-pm2 start "venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000" \
+pm2 start "venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 9090" \
   --name persona-backend --cwd "$APP_DIR/backend"
 pm2 save
 
@@ -73,24 +68,24 @@ pm2 save
 echo "⚡ Setting up Next.js frontend..."
 cd "$APP_DIR/frontend"
 npm ci --quiet
-NEXT_PUBLIC_API_URL=https://api.kakkashi.cloud npm run build
+NEXT_PUBLIC_API_URL=https://api.redber.in npm run build
 
-# Start frontend with PM2
+# Start frontend with PM2 on port 4000
 pm2 delete persona-frontend 2>/dev/null || true
-pm2 start "npm run start" --name persona-frontend --cwd "$APP_DIR/frontend"
+pm2 start "PORT=4000 npm run start" --name persona-frontend --cwd "$APP_DIR/frontend"
 pm2 save
 
 # ── 7. Nginx reverse proxy ──────────────────────────────────
 echo "🌐 Configuring Nginx..."
 
-# Frontend: kakkashi.cloud → port 3000
+# Frontend: redber.in → port 4000
 cat > /etc/nginx/sites-available/persona-frontend << 'NGINX'
 server {
     listen 80;
-    server_name kakkashi.cloud www.kakkashi.cloud;
+    server_name redber.in www.redber.in;
 
     location / {
-        proxy_pass http://localhost:3000;
+        proxy_pass http://localhost:4000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -98,19 +93,46 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_cache_bypass $http_upgrade;
     }
+
+    # Specifically for the widget embeds:
+    location /embed/ {
+        proxy_pass http://localhost:4000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_cache_bypass $http_upgrade;
+        
+        # Adding ANY add_header directive in a location block prevents inheritance
+        # of add_header directives from global/server config (like X-Frame-Options).
+        # We explicitly inject CORS to allow cross-origin iframe embedding.
+        add_header Access-Control-Allow-Origin "*";
+        add_header Content-Security-Policy "frame-ancestors *;";
+        add_header Strict-Transport-Security "max-age=31536000" always;
+    }
+
+    location = /widget.js {
+        proxy_pass http://localhost:4000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        
+        # Override headers to allow raw file fetching across origins!
+        add_header Access-Control-Allow-Origin "*";
+    }
 }
 NGINX
 
-# Backend: api.kakkashi.cloud → port 8000
+# Backend: api.redber.in → port 9090
 cat > /etc/nginx/sites-available/persona-backend << 'NGINX'
 server {
     listen 80;
-    server_name api.kakkashi.cloud;
+    server_name api.redber.in;
 
     client_max_body_size 20M;
 
     location / {
-        proxy_pass http://localhost:8000;
+        proxy_pass http://localhost:9090;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -131,16 +153,16 @@ if ! command -v certbot &>/dev/null; then
   apt-get install -y certbot python3-certbot-nginx -qq
 fi
 certbot --nginx \
-  -d kakkashi.cloud -d www.kakkashi.cloud \
-  -d api.kakkashi.cloud \
+  -d redber.in -d www.redber.in \
+  -d api.redber.in \
   --non-interactive --agree-tos -m customercare@redber.in
 
 echo ""
 echo "================================================"
 echo "  ✅ Setup complete!"
 echo ""
-echo "  Frontend: https://kakkashi.cloud"
-echo "  Backend:  https://api.kakkashi.cloud"
+echo "  Frontend: https://redber.in"
+echo "  Backend:  https://api.redber.in"
 echo ""
 echo "  ⚠️  Fill in backend/.env with real secrets"
 echo "  Run: pm2 list   (to check service status)"
