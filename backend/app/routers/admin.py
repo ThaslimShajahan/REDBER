@@ -4,15 +4,17 @@ import tempfile
 import uuid
 import asyncio
 from typing import Optional, List
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends
 from pydantic import BaseModel
 from ..rag.ingestion import extract_text_from_pdf, chunk_text
 from ..integrations.openai_client import generate_embedding
 from ..integrations.supabase_client import get_supabase_client
+from ..dependencies.auth import get_current_user, get_user_bots
 
 router = APIRouter(
     prefix="/api/admin",
-    tags=["admin"]
+    tags=["admin"],
+    dependencies=[Depends(get_current_user)]
 )
 
 # ====================
@@ -28,7 +30,7 @@ async def upload_pdf(bot_id: str = Form(...), file: UploadFile = File(...)):
     if not supabase:
         raise HTTPException(status_code=500, detail="Database credentials missing. Cannot upload.")
         
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf", mode='wb') as tmp:
         content = await file.read()
         tmp.write(content)
         tmp_path = tmp.name
@@ -206,80 +208,161 @@ def _extract_sitemap_urls(sitemap_xml: str, base_domain: str) -> list[str]:
 
 
 async def _crawl_and_ingest(job_id: str, bot_id: str, start_url: str):
-    """Background task: crawl a website and ingest all pages."""
+    """Background task: two-phase crawl.
+    Phase 1: Discover ALL internal URLs (sitemap + BFS recursion, no dup)
+    Phase 2: Crawl & ingest each URL, tracking per-URL status in DB.
+    """
     import httpx
     from bs4 import BeautifulSoup
-    from urllib.parse import urlparse
+    from urllib.parse import urlparse, urljoin
+    import json as _json
     
     supabase = get_supabase_client()
     if not supabase:
         return
     
     headers = {"User-Agent": "Mozilla/5.0 (compatible; PersonaAI-Crawler/1.0)"}
-    visited = set()
-    to_visit = [start_url.rstrip("/")]
     base_parsed = urlparse(start_url)
     base_domain = f"{base_parsed.scheme}://{base_parsed.netloc}"
-    total_chunks = 0
+    MAX_PAGES = 100
     
     def _update_job(**kwargs):
         try:
             supabase.table("crawl_jobs").update({**kwargs, "updated_at": "now()"}).eq("id", job_id).execute()
+        except Exception as e:
+            # If page_statuses column doesn't exist yet, retry without it
+            if "page_statuses" in kwargs:
+                try:
+                    safe_kwargs = {k: v for k, v in kwargs.items() if k != "page_statuses"}
+                    supabase.table("crawl_jobs").update({**safe_kwargs, "updated_at": "now()"}).eq("id", job_id).execute()
+                except Exception:
+                    pass
+    
+    _update_job(status="discovering")
+    
+    # ── PHASE 1: DISCOVER ALL LINKS ───────────────────────────────────────────
+    all_urls: list[str] = []
+    seen: set[str] = set()
+    
+    def _normalize(url: str) -> str:
+        p = urlparse(url)
+        # Remove fragments and trailing slashes  
+        return f"{p.scheme}://{p.netloc}{p.path}".rstrip("/")
+    
+    def _is_internal(url: str) -> bool:
+        try:
+            return urlparse(url).netloc == base_parsed.netloc
         except Exception:
-            pass
+            return False
     
-    _update_job(status="running")
+    queue: list[str] = [_normalize(start_url)]
+    seen.add(_normalize(start_url))
     
-    # Try to fetch sitemap first
+    # Try sitemap first to get a comprehensive URL list
     try:
         async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-            sitemap_resp = await client.get(f"{base_domain}/sitemap.xml", headers=headers)
-            if sitemap_resp.status_code == 200:
-                sitemap_urls = _extract_sitemap_urls(sitemap_resp.text, base_domain)
-                for u in sitemap_urls:
-                    if u not in visited:
-                        to_visit.append(u)
-                print(f"Sitemap: found {len(sitemap_urls)} URLs")
+            for sitemap_path in ["/sitemap.xml", "/sitemap_index.xml", "/sitemap/"]:
+                try:
+                    sitemap_resp = await client.get(f"{base_domain}{sitemap_path}", headers=headers)
+                    if sitemap_resp.status_code == 200 and "xml" in sitemap_resp.headers.get("content-type",""):
+                        sitemap_urls = _extract_sitemap_urls(sitemap_resp.text, base_domain)
+                        for u in sitemap_urls:
+                            norm = _normalize(u)
+                            if norm not in seen and _is_internal(norm):
+                                seen.add(norm)
+                                queue.append(norm)
+                        print(f"[CRAWL] Sitemap {sitemap_path}: found {len(sitemap_urls)} URLs")
+                        break
+                except Exception:
+                    pass
     except Exception as e:
-        print(f"Sitemap fetch failed (non-fatal): {e}")
+        print(f"[CRAWL] Sitemap fetch failed: {e}")
     
-    _update_job(pages_found=len(to_visit))
-    
-    # Cap at 30 pages to avoid runaway
-    max_pages = 30
-    pages_done = 0
-    
-    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-        while to_visit and pages_done < max_pages:
-            url = to_visit.pop(0)
-            if url in visited:
+    # BFS link discovery (fetch pages to find child links)
+    discovery_visited: set[str] = set()
+    async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
+        discovery_queue = list(queue)  # start from sitemap + start_url
+        while discovery_queue and len(all_urls) < MAX_PAGES:
+            url = discovery_queue.pop(0)
+            if url in discovery_visited:
                 continue
-            visited.add(url)
+            discovery_visited.add(url)
             
             try:
                 resp = await client.get(url, headers=headers)
                 if resp.status_code != 200:
                     continue
+                ctype = resp.headers.get("content-type", "")
+                if "text/html" not in ctype:
+                    continue
+                
+                # Add this page to our crawl list
+                if url not in [u for u in all_urls]:
+                    all_urls.append(url)
+                
+                # Discover child links
+                soup = BeautifulSoup(resp.text, "html.parser")
+                for a_tag in soup.find_all("a", href=True):
+                    href = a_tag["href"].strip()
+                    if not href or href.startswith("#") or href.startswith("mailto:") or href.startswith("tel:") or href.startswith("javascript:"):
+                        continue
+                    full = _normalize(urljoin(url, href))
+                    if full not in seen and _is_internal(full) and len(all_urls) + len(discovery_queue) < MAX_PAGES * 2:
+                        seen.add(full)
+                        discovery_queue.append(full)
+                        
+            except Exception as e:
+                print(f"[CRAWL:DISCOVER] {url}: {e}")
+                continue
+    
+    # Deduplicate and cap
+    all_urls = list(dict.fromkeys(all_urls))[:MAX_PAGES]
+    
+    print(f"[CRAWL] Discovery complete. Found {len(all_urls)} unique URLs to crawl.")
+    
+    # Store the full URL list with pending status
+    page_statuses = {url: "pending" for url in all_urls}
+    _update_job(
+        status="running",
+        pages_found=len(all_urls),
+        pages_done=0,
+        chunks_inserted=0,
+        page_statuses=_json.dumps(page_statuses)
+    )
+    
+    # ── PHASE 2: CRAWL & INGEST EACH URL ─────────────────────────────────────
+    total_chunks = 0
+    pages_done = 0
+    
+    async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+        for url in all_urls:
+            # Mark as crawling
+            page_statuses[url] = "crawling"
+            _update_job(page_statuses=_json.dumps(page_statuses))
+            
+            try:
+                resp = await client.get(url, headers=headers)
+                if resp.status_code != 200:
+                    page_statuses[url] = f"failed:{resp.status_code}"
+                    _update_job(page_statuses=_json.dumps(page_statuses))
+                    continue
                 if "text/html" not in resp.headers.get("content-type", ""):
+                    page_statuses[url] = "skipped"
+                    _update_job(page_statuses=_json.dumps(page_statuses))
                     continue
                 
                 soup = BeautifulSoup(resp.text, "html.parser")
                 page_title = soup.title.get_text(strip=True) if soup.title else url
                 
-                # Extract images before cleanup
-                from urllib.parse import urljoin
+                # Extract image markdown refs
                 image_mds = []
                 for img in soup.find_all("img", src=True):
                     src = img["src"]
-                    alt = img.get("alt", "Image").strip()
+                    alt = img.get("alt", "").strip() or "Image"
                     abs_url = urljoin(url, src)
-                    image_mds.append(f"![{alt}]({abs_url})")
-
-                # Discover more links
-                new_links = _extract_internal_links(url, resp.text)
-                for link in new_links:
-                    if link not in visited and link not in to_visit:
-                        to_visit.append(link)
+                    # Skip tiny icons and SVGs
+                    if not any(k in abs_url.lower() for k in [".svg", "icon", "logo", "button", "badge"]):
+                        image_mds.append(f"![{alt}]({abs_url})")
                 
                 # Extract text
                 for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
@@ -290,6 +373,8 @@ async def _crawl_and_ingest(job_id: str, bot_id: str, start_url: str):
                     text += "\n\n### Images on this page:\n" + "\n".join(image_mds)
                 
                 if not text or len(text) < 80:
+                    page_statuses[url] = "skipped:no_content"
+                    _update_job(page_statuses=_json.dumps(page_statuses))
                     continue
                 
                 # Chunk & embed
@@ -313,16 +398,25 @@ async def _crawl_and_ingest(job_id: str, bot_id: str, start_url: str):
                     total_chunks += len(records)
                 
                 pages_done += 1
-                _update_job(pages_done=pages_done, chunks_inserted=total_chunks, pages_found=len(visited) + len(to_visit))
+                page_statuses[url] = f"done:{len(records)}"
+                _update_job(
+                    pages_done=pages_done,
+                    chunks_inserted=total_chunks,
+                    page_statuses=_json.dumps(page_statuses)
+                )
                 
-                # Small delay to be polite
-                await asyncio.sleep(0.5)
+                # Polite delay
+                await asyncio.sleep(0.3)
                 
             except Exception as e:
-                print(f"Failed to crawl {url}: {e}")
+                print(f"[CRAWL:INGEST] {url}: {e}")
+                page_statuses[url] = f"failed:error"
+                _update_job(page_statuses=_json.dumps(page_statuses))
                 continue
     
-    _update_job(status="done", pages_done=pages_done, chunks_inserted=total_chunks)
+    _update_job(status="done", pages_done=pages_done, chunks_inserted=total_chunks, page_statuses=_json.dumps(page_statuses))
+    print(f"[CRAWL] Done. {pages_done} pages ingested, {total_chunks} chunks total.")
+
 
 
 @router.post("/kb/crawl_website")
@@ -364,6 +458,25 @@ async def get_crawl_status(job_id: str):
     except Exception:
         return {"status": "unknown"}
 
+@router.get("/kb/active_crawl/{bot_id}")
+async def get_active_crawl(bot_id: str):
+    """Get any active (non-done) crawl job for a bot."""
+    supabase = get_supabase_client()
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database credentials missing.")
+    try:
+        # Fetch the most recent non-done job (discovering, pending, or running)
+        resp = supabase.table("crawl_jobs").select("*") \
+            .eq("bot_id", bot_id) \
+            .in_("status", ["discovering", "pending", "running"]) \
+            .order("updated_at", desc=True) \
+            .limit(1).execute()
+        if resp.data:
+            return resp.data[0]
+        return {"status": "none"}
+    except Exception:
+        return {"status": "none"}
+
 
 @router.get("/kb/source/chunks")
 async def get_kb_source_chunks(source_group: str):
@@ -404,21 +517,59 @@ async def delete_kb_item(item_id: str):
 
 
 @router.get("/leads")
-async def get_leads():
+async def get_leads(bot_ids: Optional[str] = None, allowed_bots: Optional[List[str]] = Depends(get_user_bots)):
     supabase = get_supabase_client()
     if not supabase:
         raise HTTPException(status_code=500, detail="Database credentials missing. Cannot fetch leads.")
-    response = supabase.table("leads").select("*").order("created_at", desc=True).limit(50).execute()
+    
+    query = supabase.table("leads").select("*").order("created_at", desc=True).limit(200)
+    
+    # Enforce tenant isolation
+    target_ids = []
+    if bot_ids:
+        requested_ids = [b.strip() for b in bot_ids.split(",") if b.strip()]
+        if allowed_bots is None: # Super Admin
+            target_ids = requested_ids
+        else:
+            target_ids = [bid for bid in requested_ids if bid in allowed_bots]
+    elif allowed_bots is not None:
+        target_ids = allowed_bots
+
+    if target_ids:
+        query = query.in_("bot_id", target_ids)
+    elif allowed_bots is not None:
+        # If not super admin and no allowed bots, return empty
+        return []
+
+    response = query.execute()
     return response.data
 
 
 @router.get("/logs")
-async def get_logs():
+async def get_logs(bot_ids: Optional[str] = None, allowed_bots: Optional[List[str]] = Depends(get_user_bots)):
     supabase = get_supabase_client()
     if not supabase:
         raise HTTPException(status_code=500, detail="Database credentials missing.")
     try:
-        response = supabase.table("chat_logs").select("*").order("created_at", desc=True).limit(200).execute()
+        query = supabase.table("chat_logs").select("*").order("created_at", desc=True).limit(500)
+        
+        # Enforce tenant isolation
+        target_ids = []
+        if bot_ids:
+            requested_ids = [b.strip() for b in bot_ids.split(",") if b.strip()]
+            if allowed_bots is None: # Super Admin
+                target_ids = requested_ids
+            else:
+                target_ids = [bid for bid in requested_ids if bid in allowed_bots]
+        elif allowed_bots is not None:
+            target_ids = allowed_bots
+
+        if target_ids:
+            query = query.in_("bot_id", target_ids)
+        elif allowed_bots is not None:
+            return []
+
+        response = query.execute()
         return response.data
     except Exception:
         return []
@@ -463,15 +614,33 @@ async def get_kb_stats():
 
 
 @router.get("/kb/sources")
-async def get_kb_sources():
+async def get_kb_sources(bot_ids: Optional[str] = None, allowed_bots: Optional[List[str]] = Depends(get_user_bots)):
     """Returns KB grouped by source for the KB management view."""
     supabase = get_supabase_client()
     if not supabase:
         raise HTTPException(status_code=500, detail="Database credentials missing.")
     
-    response = supabase.table("knowledge_base").select(
+    query = supabase.table("knowledge_base").select(
         "id, bot_id, source_type, page_title, source_group, created_at"
-    ).order("created_at", desc=True).execute()
+    ).order("created_at", desc=True)
+    
+    # Enforce tenant isolation
+    target_ids = []
+    if bot_ids:
+        requested_ids = [b.strip() for b in bot_ids.split(",") if b.strip()]
+        if allowed_bots is None: # Super Admin
+            target_ids = requested_ids
+        else:
+            target_ids = [bid for bid in requested_ids if bid in allowed_bots]
+    elif allowed_bots is not None:
+        target_ids = allowed_bots
+
+    if target_ids:
+        query = query.in_("bot_id", target_ids)
+    elif allowed_bots is not None:
+        return []
+
+    response = query.execute()
     
     # Group by source_group
     from collections import defaultdict
@@ -495,29 +664,58 @@ async def get_kb_sources():
 # ====================
 
 @router.get("/bots")
-async def get_bots():
+async def get_bots(bot_ids: Optional[str] = None, allowed_bots: Optional[List[str]] = Depends(get_user_bots)):
     supabase = get_supabase_client()
     if not supabase:
-        raise HTTPException(status_code=500, detail="Database credentials missing.")
+        raise HTTPException(status_code=500, detail="Database credentials missing. Check your .env file.")
         
-    response = supabase.table("bots").select("*").execute()
-    
-    bots = []
-    for bot in response.data:
-        bots.append({
-            "id": bot["id"],
-            "name": bot["name"],
-            "role": bot["role"],
-            "persona_prompt": bot["persona_prompt"],
-            "theme_color": bot.get("theme_color", ""),
-            "status": bot.get("status", "Active"),
-            "avatar": bot.get("avatar", ""),
-            "page_config": bot.get("page_config") or {},
-            "persona_config": bot.get("persona_config") or {},
-            "engine": "gpt-4o",
-            "docs": 0
-        })
-    return bots
+    try:
+        print(f"[ADMIN BOTS] Request for bot_ids: {bot_ids}, allowed_bots: {allowed_bots}")
+        query = supabase.table("bots").select("*")
+        
+        # Enforce tenant isolation
+        target_ids = []
+        if bot_ids:
+            requested_ids = [b.strip() for b in bot_ids.split(",") if b.strip()]
+            if allowed_bots is None: # Super Admin
+                target_ids = requested_ids
+            else:
+                target_ids = [bid for bid in requested_ids if bid in allowed_bots]
+        elif allowed_bots is not None:
+            target_ids = allowed_bots
+
+        print(f"[ADMIN BOTS] target_ids: {target_ids}")
+        if target_ids:
+            query = query.in_("id", target_ids)
+        elif allowed_bots is not None:
+            print("[ADMIN BOTS] Not super admin and no target_ids, returning empty")
+            return []
+
+        response = query.execute()
+        print(f"[ADMIN BOTS] Found {len(response.data or [])} bots in database")
+        
+        bots = []
+        for bot in response.data:
+            # Use .get() for all fields to avoid KeyError if schema changed
+            bots.append({
+                "id": bot.get("id", ""),
+                "name": bot.get("name", "Unknown Bot"),
+                "role": bot.get("role", "AI Assistant"),
+                "persona_prompt": bot.get("persona_prompt", ""),
+                "theme_color": bot.get("theme_color", "bg-indigo-600"),
+                "status": bot.get("status", "Active"),
+                "is_public": bot.get("is_public", False),
+                "avatar": bot.get("avatar", ""),
+                "page_config": bot.get("page_config") or {},
+                "persona_config": bot.get("persona_config") or {},
+                "engine": "gpt-4o",
+                "docs": 0
+            })
+        return bots
+    except Exception as e:
+        import logging
+        logging.error(f"Error fetching bots: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
 class PersonaConfig(BaseModel):
@@ -542,6 +740,7 @@ class BotUpdateRequest(BaseModel):
     theme_color: str
     avatar: str
     status: str
+    is_public: Optional[bool] = False
     page_config: dict = {}
     persona_config: dict = {}
 
@@ -560,6 +759,7 @@ async def update_bot(bot_id: str, request: BotUpdateRequest):
             "theme_color": request.theme_color,
             "avatar": request.avatar,
             "status": request.status,
+            "is_public": request.is_public,
             "page_config": request.page_config,
             "persona_config": request.persona_config,
         }).eq("id", bot_id).execute()
@@ -589,6 +789,7 @@ class BotCreateRequest(BaseModel):
     theme_color: str = "bg-gradient-to-r from-purple-500 to-indigo-600"
     avatar: str = ""
     status: str = "Active"
+    is_public: bool = False
     page_config: dict = {}
     persona_config: dict = {}
 
@@ -629,11 +830,52 @@ Output strictly valid JSON:
             {"role": "system", "content": "You output only JSON without markdown wrappers."},
             {"role": "user", "content": prompt}
         ])
-        reply = raw_reply.choices[0].message.content if hasattr(raw_reply, "choices") else str(raw_reply)
+        reply = raw_reply
         
         cleaned = reply.strip().strip('`').lstrip('json').strip()
         data = json.loads(cleaned)
         return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Generation failed: {e}")
+
+
+class GenerateQuestionsRequest(BaseModel):
+    bot_name: str
+    role: str
+    industry: str
+    tone: str = "Friendly"
+
+
+@router.post("/bots/generate-questions")
+async def generate_suggested_questions(request: GenerateQuestionsRequest):
+    """Generate 5 contextually relevant suggested questions for a bot's chat starter."""
+    from ..integrations.openai_client import generate_chat_response
+    import json
+
+    prompt = f"""You are a UX copywriter for AI chatbots.
+Generate exactly 5 short, natural suggested questions that a visitor might ask when first opening a chat with this bot.
+
+Bot Name: {request.bot_name}
+Role: {request.role}
+Industry: {request.industry}
+Tone: {request.tone}
+
+Rules:
+- Each question must be under 50 characters
+- Must be conversational, not robotic 
+- Specific to this industry/role
+- Mix of different topics (hours, services, pricing, booking, info)
+- Output ONLY valid JSON: {{"questions": ["Q1", "Q2", "Q3", "Q4", "Q5"]}}"""
+
+    try:
+        raw_reply = await generate_chat_response([
+            {"role": "system", "content": "You output only JSON without markdown."},
+            {"role": "user", "content": prompt}
+        ])
+        reply = raw_reply
+        cleaned = reply.strip().strip('`').lstrip('json').strip()
+        data = json.loads(cleaned)
+        return {"questions": data.get("questions", [])}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Generation failed: {e}")
 
@@ -652,6 +894,7 @@ async def create_bot(request: BotCreateRequest):
             "theme_color": request.theme_color,
             "avatar": request.avatar,
             "status": request.status,
+            "is_public": request.is_public,
             "page_config": request.page_config,
             "persona_config": request.persona_config,
         }).execute()
@@ -681,6 +924,7 @@ class ContactSubmission(BaseModel):
     email: str
     subject: str
     message: str
+    bot_id: Optional[str] = None
 
 @router.post("/contacts")
 async def submit_contact(payload: ContactSubmission):
@@ -693,6 +937,7 @@ async def submit_contact(payload: ContactSubmission):
             "email": payload.email,
             "subject": payload.subject,
             "message": payload.message,
+            "bot_id": payload.bot_id,
             "is_read": False,
         }).execute()
         return {"status": "received"}
@@ -700,12 +945,17 @@ async def submit_contact(payload: ContactSubmission):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/contacts")
-async def get_contacts():
+async def get_contacts(bot_ids: Optional[str] = None):
     supabase = get_supabase_client()
     if not supabase:
         raise HTTPException(status_code=500, detail="Database unavailable.")
     try:
-        res = supabase.table("contacts").select("*").order("created_at", desc=True).execute()
+        query = supabase.table("contacts").select("*").order("created_at", desc=True)
+        if bot_ids:
+            ids = [b.strip() for b in bot_ids.split(",") if b.strip()]
+            if ids:
+                query = query.in_("bot_id", ids)
+        res = query.execute()
         return res.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

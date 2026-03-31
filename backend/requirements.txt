@@ -11,3 +11,7 @@ pdfplumber
 beautifulsoup4
 requests
 python-multipart
+firebase-admin
+deepgram-sdk
+httpx
+websockets

@@ -46,8 +46,7 @@ export default function ContactPage() {
                         <span className="font-bold text-gray-300 group-hover:text-white transition-colors">Back to Home</span>
                     </Link>
                     <div className="flex items-center gap-2">
-                        <img src="/logo_white.png" alt="Redber" className="h-6 w-auto" />
-                        <span className="font-bold text-lg tracking-tight">Redber</span>
+                        <img src="/redber_logo_transperent.png" alt="Redber" className="h-6 w-auto" />
                     </div>
                 </div>
             </nav>

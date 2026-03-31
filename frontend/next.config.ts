@@ -1,18 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  async rewrites() {
-    return [
-      {
-        source: "/embed/:botId",
-        destination: "/chat/:botId",
-      },
-    ];
-  },
   async headers() {
     return [
       {
-        // Applies to both the rewritten /embed pages and direct /chat pages
+        // Allow /embed pages to be loaded in iframes from any origin
         source: "/embed/:path*",
         headers: [
           { key: "Access-Control-Allow-Origin", value: "*" },

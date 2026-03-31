@@ -49,3 +49,31 @@ tsconfig.tsbuildinfo
 # ── Logs ────────────────────────────────────────
 *.log
 logs/
+auth_error.log
+
+# ── Local dev/test files (not for production) ───
+test_embed.html
+backend/dummy.json
+backend/bots_list.json
+backend/auth_error.log
+
+# ── Seed and one-off scripts ─────────────────────
+seed_*.py
+add_maya_knowledge.py
+test_*.py
+verify_calling.py
+
+# ── Supabase local ───────────────────────────────
+backend/supabase/
+
+# ── Doc dumps ────────────────────────────────────
+FLEXIBLE_DURATIONS_GUIDE.md
+IMPLEMENTATION_CHECKLIST.md
+IMPLEMENTATION_COMPLETE.md
+MIGRATION_BOTS_PUBLIC.sql
+PROJECT_SUMMARY.md
+QUICK_START.md
+RATE_LIMITING_GUIDE.md
+RATE_LIMITING_SYSTEM.md
+RATE_LIMIT_MIGRATION.sql
+APPLY_THIS_MIGRATION.sql

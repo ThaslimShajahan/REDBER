@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Chatbot from "../../../components/Chatbot";
 import { Loader2, ArrowLeft, MapPin, Clock, Phone, Globe, MessageCircle } from "lucide-react";
 import Link from "next/link";
-import { motion, useScroll, useTransform } from "framer-motion";
+import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
 import { API_BASE } from "../../../lib/api";
 
 export default function ChatPage() {
@@ -15,14 +15,17 @@ export default function ChatPage() {
     const [bot, setBot] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [showMobileChat, setShowMobileChat] = useState(false);
+    const [isChatOpen, setIsChatOpen] = useState(false);
     const leftRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (!botId) return;
-        fetch(`${API_BASE}/api/admin/bots`)
+        fetch(`${API_BASE}/api/bots/public/list`)
             .then(res => res.json())
             .then(data => {
-                const found = data.find((b: any) =>
+                // Public API returns data directly as array
+                const list = Array.isArray(data) ? data : (Array.isArray(data?.bots) ? data.bots : []);
+                const found = list.find((b: any) =>
                     b.name.toLowerCase() === botId.toLowerCase() || b.id === botId
                 );
                 if (found) setBot(found);
@@ -42,13 +45,16 @@ export default function ChatPage() {
     if (!bot) return null;
 
     const pc = bot.page_config || {};
-    const isRestaurant = bot.id?.includes("restaurant");
-    const accentColor = isRestaurant ? "text-rose-400" : "text-red-400";
-    const accentGrad = isRestaurant ? "from-rose-500 to-orange-400" : "from-red-600 to-rose-500";
-    const accentBorder = isRestaurant ? "border-rose-500/30" : "border-red-500/30";
-    const accentGlow = isRestaurant ? "shadow-rose-500/20" : "shadow-red-500/20";
+    const isRestaurant = bot.id?.includes("restaurant") || bot.persona_config?.industry?.toLowerCase().includes("restaurant");
+    const isResort = bot.id?.includes("resort") || bot.id?.includes("hotel") || bot.persona_config?.industry?.toLowerCase().includes("resort") || bot.persona_config?.industry?.toLowerCase().includes("hospitality");
+    const accentColor = isResort ? "text-emerald-400" : isRestaurant ? "text-rose-400" : "text-red-400";
+    const accentGrad = isResort ? "from-emerald-600 to-teal-600" : isRestaurant ? "from-rose-500 to-orange-400" : "from-red-600 to-rose-500";
+    const accentBorder = isResort ? "border-emerald-500/30" : isRestaurant ? "border-rose-500/30" : "border-red-500/30";
+    const accentGlow = isResort ? "shadow-emerald-500/20" : isRestaurant ? "shadow-rose-500/20" : "shadow-red-500/20";
 
-    const heroImage = pc.hero_image || (isRestaurant
+    const heroImage = pc.hero_image || (isResort
+        ? "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1400&q=85"
+        : isRestaurant
         ? "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1400&q=85"
         : "https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=1400&q=85"
     );
@@ -60,11 +66,19 @@ export default function ChatPage() {
         pc.website && { icon: Globe, text: pc.website },
     ].filter(Boolean) as { icon: any; text: string }[];
 
+    const handleOpenChat = () => {
+        setIsChatOpen(true);
+    };
+
+    const handleCloseChat = () => {
+        setIsChatOpen(false);
+    };
+
     return (
         <div className="bg-[#080808] text-white min-h-screen">
             {/* Ambient background */}
             <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-                <div className={`absolute top-[-20%] right-[-10%] w-[55%] h-[55%] rounded-full opacity-[0.07] blur-[160px] ${isRestaurant ? "bg-rose-500" : "bg-red-500"}`} />
+                <div className={`absolute top-[-20%] right-[-10%] w-[55%] h-[55%] rounded-full opacity-[0.07] blur-[160px] ${isResort ? "bg-emerald-500" : isRestaurant ? "bg-rose-500" : "bg-red-500"}`} />
                 <div className="absolute bottom-[-10%] left-[-5%] w-[40%] h-[40%] rounded-full opacity-[0.05] blur-[120px] bg-white" />
             </div>
 
@@ -306,80 +320,52 @@ export default function ChatPage() {
                         )}
                     </div>
                 </div>
-
-                {/* ===== RIGHT — fixed (sticky) chat panel ===== */}
-                <div className="hidden lg:flex w-[400px] shrink-0 h-screen flex-col bg-[#0a0a0a] border-l border-white/[0.06]">
-                    {/* Top accent bar */}
-                    <div className={`h-1 w-full bg-gradient-to-r ${accentGrad}`} />
-
-                    {/* Panel header */}
-                    <div className="px-6 py-5 flex items-center gap-4 border-b border-white/5">
-                        <div className="relative shrink-0">
-                            {bot.avatar ? (
-                                <img src={bot.avatar} alt={bot.name}
-                                    className="w-10 h-10 rounded-full object-cover border border-white/15" />
-                            ) : (
-                                <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${accentGrad} flex items-center justify-center font-black text-sm`}>
-                                    {bot.name.charAt(0)}
-                                </div>
-                            )}
-                            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-400 border-2 border-[#0a0a0a] rounded-full" />
-                        </div>
-                        <div>
-                            <p className="font-bold text-sm leading-none mb-0.5">{bot.name}</p>
-                            <p className={`text-xs font-semibold ${accentColor}`}>{pc.tagline || bot.role}</p>
-                        </div>
-                        <div className="ml-auto flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                            <span className="text-xs text-emerald-400 font-semibold">Live</span>
-                        </div>
-                    </div>
-
-                    {/* Chat widget — fills all remaining height */}
-                    <div className="flex-1 min-h-0 overflow-hidden">
-                        <Chatbot
-                            botId={bot.id}
-                            botName={bot.name}
-                            botRole={bot.role}
-                            botAvatar={bot.avatar}
-                            themeColor={bot.theme_color || `bg-gradient-to-br ${accentGrad}`}
-                            fullScreen={true}
-                        />
-                    </div>
-                </div>
             </div>
 
-            {/* ===== MOBILE: Floating chat button ===== */}
-            <div className="lg:hidden fixed bottom-5 right-5 z-50">
-                <button
-                    onClick={() => setShowMobileChat(true)}
-                    className={`flex items-center gap-2 bg-gradient-to-r ${accentGrad} text-white px-5 py-3.5 rounded-full font-bold shadow-2xl text-sm ${accentGlow}`}
-                >
-                    <MessageCircle size={18} />
-                    Chat with {bot.name}
-                </button>
-            </div>
+            {/* ===== FLOATING CHAT WIDGET & POPUP ===== */}
+            <AnimatePresence>
+                {!isChatOpen && (
+                    <motion.button
+                        key="chat-btn"
+                        onClick={handleOpenChat}
+                        initial={{ scale: 0, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0.8, opacity: 0 }}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className={`fixed bottom-6 right-6 z-50 flex items-center justify-center gap-3 bg-gradient-to-br ${accentGrad} text-white px-5 sm:px-6 py-4 rounded-full font-black text-sm md:text-base shadow-[0_10px_40px_rgba(244,63,94,0.4)]`}
+                    >
+                        <MessageCircle size={24} className="animate-pulse" />
+                        <span className="hidden sm:block">Chat with {bot.name}</span>
+                    </motion.button>
+                )}
 
-            {/* Mobile chat drawer */}
-            {showMobileChat && (
-                <div className="lg:hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col">
-                    <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 bg-[#0a0a0a]">
-                        <p className="font-bold">Chat with {bot.name}</p>
-                        <button onClick={() => setShowMobileChat(false)}
-                            className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-gray-300 font-bold">×</button>
-                    </div>
-                    <div className="flex-1 overflow-hidden">
-                        <Chatbot
-                            botId={bot.id}
-                            botName={bot.name}
-                            botRole={bot.role}
-                            botAvatar={bot.avatar}
-                            themeColor={bot.theme_color || `bg-gradient-to-br ${accentGrad}`}
-                            fullScreen={true}
-                        />
-                    </div>
-                </div>
-            )}
+                {isChatOpen && (
+                    <motion.div
+                        key="chat-popup"
+                        initial={{ opacity: 0, y: 50, scale: 0.9, filter: "blur(10px)" }}
+                        animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+                        exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                        transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                        className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-[60] w-[calc(100vw-32px)] sm:w-[420px] h-[600px] max-h-[85vh] flex flex-col bg-[#0a0a0a] border border-white/10 rounded-3xl shadow-[0_20px_80px_rgba(0,0,0,0.8)] overflow-hidden"
+                    >
+                        <div className="flex-1 w-full h-full relative">
+                            {/* Stretch Chatbot purely so it controls its own layout */}
+                            <Chatbot
+                                botId={bot.id}
+                                botName={bot.name}
+                                botRole={bot.role}
+                                botAvatar={bot.avatar}
+                                themeColor={`bg-gradient-to-br ${accentGrad}`}
+                                fullScreen={true}
+                                suggestedQuestions={bot.page_config?.suggested_questions || []}
+                                voiceEnabled={!!bot.persona_config?.voice_enabled}
+                                onClose={handleCloseChat}
+                            />
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

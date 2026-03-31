@@ -1,10 +1,40 @@
+import { useState } from "react";
+import { API_BASE, authFetch } from "../../../lib/api";
+
 const INPUT_CLS = "w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-red-500 transition-colors";
 const LABEL_CLS = "block text-xs font-semibold text-gray-400 mb-1";
 const SECTION_CLS = "bg-white/[0.03] border border-white/8 rounded-2xl p-4 space-y-3";
 
-export default function PageContentEditor({ config, onChange }: { config: any; onChange: (c: any) => void }) {
+export default function PageContentEditor({ config, onChange, bot }: { config: any; onChange: (c: any) => void; bot?: any }) {
     const pc = config || {};
     const set = (key: string, val: any) => onChange({ ...pc, [key]: val });
+    const [isGeneratingQ, setIsGeneratingQ] = useState(false);
+
+    const generateQuestions = async () => {
+        if (!bot) return alert("Please save the bot at least once before auto-generating questions.");
+        setIsGeneratingQ(true);
+        try {
+            const res = await authFetch(`${API_BASE}/api/admin/bots/generate-questions`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ 
+                    bot_name: bot.name, 
+                    role: bot.role, 
+                    industry: bot.persona_config?.industry || "General",
+                    tone: bot.persona_config?.tone || "Friendly" 
+                })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                set("suggested_questions", data.questions || []);
+            } else {
+                alert(data.detail || "Failed to generate questions");
+            }
+        } catch {
+            alert("Network error");
+        } finally {
+            setIsGeneratingQ(false);
+        }
+    };
 
     const features: any[] = pc.about?.features || [];
     const setFeatures = (f: any[]) => set("about", { ...(pc.about || {}), features: f });
@@ -85,6 +115,89 @@ export default function PageContentEditor({ config, onChange }: { config: any; o
                         </div>
                     ))}
                     <button type="button" onClick={addFeature} className="text-xs text-red-400 font-semibold border border-red-500/20 px-3 py-1.5 rounded-lg">+ Add feature bullet</button>
+                </div>
+            </div>
+
+            {/* ===================== SUGGESTED QUESTIONS — PREMIUM SECTION ===================== */}
+            <div className="bg-gradient-to-br from-indigo-950/40 to-purple-950/30 border border-indigo-500/20 rounded-2xl p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <p className="text-sm font-bold text-white flex items-center gap-2">💬 Suggested Questions</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">Shown as quick-tap chips when user opens chat. Drives engagement instantly.</p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={generateQuestions}
+                        disabled={isGeneratingQ}
+                        className="flex items-center gap-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-[10px] font-bold px-3 py-2 rounded-xl shadow-lg shadow-purple-900/30 hover:scale-[1.02] transition-all disabled:opacity-50 shrink-0"
+                    >
+                        {isGeneratingQ ? (
+                            <><span className="animate-spin">⟳</span> Generating...</>
+                        ) : (
+                            <>✨ AI Generate</>
+                        )}
+                    </button>
+                </div>
+
+                {/* Live Preview */}
+                {(pc.suggested_questions || []).filter((q: string) => q.trim()).length > 0 && (
+                    <div className="bg-black/30 border border-white/5 rounded-xl p-3">
+                        <p className="text-[9px] text-gray-600 uppercase font-bold tracking-widest mb-2">Preview (how users see them)</p>
+                        <div className="flex flex-wrap gap-2">
+                            {(pc.suggested_questions || []).filter((q: string) => q.trim()).map((q: string, i: number) => (
+                                <span key={i} className="text-[10px] bg-white/8 border border-white/10 text-gray-300 px-3 py-1.5 rounded-full font-medium">
+                                    {q}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Question inputs */}
+                <div className="space-y-2">
+                    {(pc.suggested_questions || []).map((q: string, i: number) => (
+                        <div key={i} className="flex gap-2 items-center group">
+                            <div className="flex-1 relative">
+                                <input
+                                    className="w-full bg-black/50 border border-white/10 focus:border-indigo-500/60 rounded-xl px-3 py-2 text-xs text-white outline-none transition-colors pr-10"
+                                    placeholder={i === 0 ? "E.g. What are your opening hours?" : i === 1 ? "E.g. What services do you offer?" : "E.g. How can I book an appointment?"}
+                                    value={q}
+                                    maxLength={60}
+                                    onChange={e => {
+                                        const next = [...(pc.suggested_questions || [])];
+                                        next[i] = e.target.value;
+                                        set("suggested_questions", next);
+                                    }}
+                                />
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] text-gray-600">{q.length}/60</span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => set("suggested_questions", (pc.suggested_questions || []).filter((_: any, idx: number) => idx !== i))}
+                                className="opacity-0 group-hover:opacity-100 text-rose-400 hover:text-rose-300 text-base leading-none shrink-0 w-7 h-7 flex items-center justify-center bg-rose-500/10 hover:bg-rose-500/20 rounded-lg transition-all"
+                            >×</button>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="flex items-center justify-between pt-1 border-t border-white/5">
+                    <button
+                        type="button"
+                        onClick={() => set("suggested_questions", [...(pc.suggested_questions || []), ""])}
+                        disabled={(pc.suggested_questions || []).length >= 6}
+                        className="text-[10px] text-indigo-400 font-bold border border-indigo-500/20 px-3 py-1.5 rounded-lg hover:bg-indigo-500/10 transition-colors disabled:opacity-40"
+                    >
+                        + Add Question {(pc.suggested_questions || []).length > 0 ? `(${(pc.suggested_questions || []).length}/6)` : ""}
+                    </button>
+                    {(pc.suggested_questions || []).length > 0 && (
+                        <button
+                            type="button"
+                            onClick={() => set("suggested_questions", [])}
+                            className="text-[10px] text-gray-600 hover:text-rose-400 transition-colors"
+                        >
+                            Clear all
+                        </button>
+                    )}
                 </div>
             </div>
 

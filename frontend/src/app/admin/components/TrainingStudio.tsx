@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { API_BASE } from "../../../lib/api";
+import { API_BASE, authFetch } from "../../../lib/api";
 import { Plus, Send, Trash2, PenLine, Check } from "lucide-react";
 
 type QA = { question: string; answer: string };
@@ -14,7 +14,7 @@ export default function TrainingStudio() {
     const [toast, setToast] = useState<string | null>(null);
 
     useEffect(() => {
-        fetch(`${API_BASE}/api/admin/bots`)
+        authFetch(`${API_BASE}/api/admin/bots`)
             .then(r => r.json())
             .then(data => {
                 if (Array.isArray(data) && data.length > 0) {
@@ -44,7 +44,7 @@ export default function TrainingStudio() {
         try {
             // Compose all Q&A into a single rich knowledge text
             const textContent = valid.map(e => `Q: ${e.question.trim()}\nA: ${e.answer.trim()}`).join("\n\n---\n\n");
-            const res = await fetch(`${API_BASE}/api/admin/kb/ingest_text`, {
+            const res = await authFetch(`${API_BASE}/api/admin/kb/ingest_text`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({

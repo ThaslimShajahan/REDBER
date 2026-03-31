@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { X, Mail, Clock, RefreshCw, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { API_BASE } from "../../../lib/api";
+import { API_BASE, authFetch } from "../../../lib/api";
+import { TopProgressBar, SkeletonRow } from "./PageLoader";
 
 function timeAgo(ts: string) {
     if (!ts) return "—";
@@ -19,14 +20,19 @@ function isToday(ts: string) {
     return new Date(ts).toDateString() === new Date().toDateString();
 }
 
+import { useAuth } from "../context/AuthContext";
+
 export default function ContactsView() {
+    const { user } = useAuth();
     const [messages, setMessages] = useState<any[]>([]);
     const [selectedMsg, setSelectedMsg] = useState<any>(null);
     const [loading, setLoading] = useState(true);
 
     const fetchContacts = useCallback(async () => {
+        if (!user) return;
         try {
-            const res = await fetch(`${API_BASE}/api/admin/contacts`);
+            const botIdsParam = user.role === "super_admin" ? "" : `?bot_ids=${user.botIds?.join(",") || "NONE"}`;
+            const res = await authFetch(`${API_BASE}/api/admin/contacts${botIdsParam}`);
             if (res.ok) {
                 const data = await res.json();
                 setMessages(data);
@@ -36,7 +42,7 @@ export default function ContactsView() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [user]);
 
     useEffect(() => {
         fetchContacts();
@@ -47,7 +53,7 @@ export default function ContactsView() {
 
     const markAsRead = async (id: string) => {
         try {
-            await fetch(`${API_BASE}/api/admin/contacts/${id}/read`, { method: "PATCH" });
+            await authFetch(`${API_BASE}/api/admin/contacts/${id}/read`, { method: "PATCH" });
             setMessages(prev => prev.map(m => m.id === id ? { ...m, is_read: true } : m));
         } catch (err) {
             console.error("Mark read error:", err);
@@ -58,7 +64,7 @@ export default function ContactsView() {
         e.stopPropagation();
         if (!confirm("Delete this message?")) return;
         try {
-            await fetch(`${API_BASE}/api/admin/contacts/${id}`, { method: "DELETE" });
+            await authFetch(`${API_BASE}/api/admin/contacts/${id}`, { method: "DELETE" });
             setMessages(prev => prev.filter(m => m.id !== id));
             if (selectedMsg?.id === id) setSelectedMsg(null);
         } catch (err) {
@@ -108,7 +114,7 @@ export default function ContactsView() {
                     </thead>
                     <tbody className="divide-y divide-white/5 text-sm">
                         {loading ? (
-                            <tr><td colSpan={5} className="p-8 text-center text-gray-500 italic">Loading messages...</td></tr>
+                            <>{loading && <TopProgressBar />}<SkeletonRow cols={5} /><SkeletonRow cols={5} /><SkeletonRow cols={5} /><SkeletonRow cols={5} /></>
                         ) : messages.length === 0 ? (
                             <tr><td colSpan={5} className="p-8 text-center text-gray-500 italic">No messages yet.</td></tr>
                         ) : (

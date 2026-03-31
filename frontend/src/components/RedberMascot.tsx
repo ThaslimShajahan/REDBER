@@ -52,7 +52,7 @@ function CuteBlob({ mood = "happy", size = 100, blinking = false }: {
 
             {/* Logo on belly */}
             <image
-                href="/logo_white.png"
+                href="/redber_logo_transperent.png"
                 x="34" y="56" width="32" height="24"
                 preserveAspectRatio="xMidYMid meet"
                 style={{ filter: "brightness(0.8)" }}
@@ -168,13 +168,13 @@ interface PeekConfig {
 
 const CONFIGS: Record<PeekPos, PeekConfig> = {
     top: {
-        posClass: "top-0 left-[40%]",
-        shownX: "0px", shownY: "-55px",      // only eyes/top visible
-        hiddenX: "0px", hiddenY: "-140px",
+        posClass: "top-0 left-[45%]",
+        shownX: "0px", shownY: "70px",      // Hanging down to show body
+        hiddenX: "0px", hiddenY: "-160px",
         rotation: 0,
-        mood: "happy",
+        mood: "surprised",
         bubbleDir: "below",
-        quipClass: "mt-[70px] ml-[-40px]",
+        quipClass: "mt-[95px]",
     },
     left: {
         posClass: "top-[35%] left-0",
@@ -417,6 +417,13 @@ export default function RedberMascot() {
                                 </AnimatePresence>
                             )}
 
+                            {/* Rope for top hang */}
+                            {peekPos === "top" && (
+                                <div className="absolute -top-[120px] left-1/2 -translate-x-1/2 w-[1px] h-[130px] bg-gradient-to-t from-gray-400/50 via-gray-600/30 to-transparent z-[-1]">
+                                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-gray-400" />
+                                </div>
+                            )}
+
                             {/* The creature itself */}
                             <div className="relative">
                                 {isRunning && (
@@ -425,9 +432,18 @@ export default function RedberMascot() {
                                     </div>
                                 )}
                                 <motion.div
-                                    style={{ rotate: cfg.rotation, scaleX: cfg.flipX ? -1 : 1 }}
-                                    animate={{ y: isRunning ? [0, -12, 0, -12, 0] : [0, -5, 0] }}
-                                    transition={{ repeat: Infinity, duration: isRunning ? 0.45 : 2.5, ease: "easeInOut", type: "tween" }}
+                                    style={{ 
+                                        rotate: cfg.rotation, 
+                                        scaleX: cfg.flipX ? -1 : 1,
+                                        transformOrigin: peekPos === "top" ? "center -100px" : "center center" 
+                                    }}
+                                    animate={isRunning 
+                                        ? { y: [0, -12, 0, -12, 0] } 
+                                        : peekPos === "top"
+                                            ? { rotate: [-3, 3, -3], y: [0, 4, 0] }
+                                            : { y: [0, -5, 0] }
+                                    }
+                                    transition={{ repeat: Infinity, duration: isRunning ? 0.45 : 3.5, ease: "easeInOut", type: "tween" }}
                                 >
                                     <CuteBlob mood={cfg.mood} size={isRunning ? 80 : 110} blinking={blinking} />
                                 </motion.div>

@@ -1,17 +1,116 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Form
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
+from ..dependencies.auth import get_current_user
 import json
 import base64
+import httpx
 from ..models.schemas import ChatRequest, ChatResponse, ChatMessage
 from ..integrations.openai_client import transcribe_audio, generate_speech
+from ..integrations.supabase_client import get_supabase_client
+from pydantic import BaseModel
+from typing import Optional
+
+import os
+load_dotenv = lambda: __import__('dotenv').load_dotenv(override=True)
+load_dotenv()
+
+# Get key from environment
+DEEPGRAM_API_KEY = os.environ.get("DEEPGRAM_API_KEY", "").strip()
 
 router = APIRouter(
     prefix="/api/bots",
     tags=["bots"]
 )
 
+
+class TTSRequest(BaseModel):
+    text: str
+    voice: str = "aura-asteria-en"  # Deepgram Aura voice
+
+
+@router.post("/tts")
+async def text_to_speech(req: TTSRequest):
+    """Convert text to speech using Deepgram Aura TTS (ultra-low latency)."""
+    try:
+        url = f"https://api.deepgram.com/v1/speak?model={req.voice}"
+        headers = {
+            "Authorization": f"Token {DEEPGRAM_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        async with httpx.AsyncClient(timeout=15.0) as http_client:
+            response = await http_client.post(url, headers=headers, json={"text": req.text})
+            if response.status_code == 200:
+                audio_b64 = base64.b64encode(response.content).decode("utf-8")
+                return {"audio_b64": audio_b64, "provider": "deepgram"}
+    except Exception as e:
+        print(f"[TTS] Deepgram failed: {e}, falling back to OpenAI")
+
+    # Fallback to OpenAI TTS
+    try:
+        audio_bytes = await generate_speech(req.text, "nova")
+        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+        return {"audio_b64": audio_b64, "provider": "openai"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"TTS failed: {e}")
+
+
+# ── Public Bots Listing (no auth — for landing page) ──────────────────────────
+
+@router.get("/public/list")
+async def public_list_bots():
+    """Returns Active bots for the public landing page — no auth required.
+    Only exposes safe fields (no persona_prompt).
+    """
+    print("[PUBLIC BOTS] Fetching active bots...")
+    supabase = get_supabase_client()
+    if not supabase:
+        print("[PUBLIC BOTS] Supabase client is None!")
+        return []
+    try:
+        response = supabase.table("bots").select(
+            "id, name, role, theme_color, avatar, status, persona_config, page_config, is_public"
+        ).eq("status", "Active").eq("is_public", True).execute()
+        print(f"[PUBLIC BOTS] Found {len(response.data)} bots.")
+        return response.data or []
+    except Exception as e:
+        print(f"[PUBLIC BOTS] error: {e}")
+        return []
+
+
+
+class SetRateLimitsRequest(BaseModel):
+    monthly_messages: int = 999999
+    messages_per_day: int = 999999
+    messages_per_hour: int = 999999
+    api_calls_per_minute: int = 999999
+    burst_limit: int = 999999
+    max_bots: int = 20
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     from ..services.bot_service import BotService
+    from ..services.rate_limiter import check_and_increment, get_bot_limits, get_friendly_block_message
+
+    # ── Fetch limits for this bot ──────────────────────────────────────────────
+    try:
+        limits = await get_bot_limits(request.bot_id)
+        
+        if limits:
+            allowed, reason, counts = await check_and_increment(request.bot_id, limits)
+            if not allowed:
+                block_message = get_friendly_block_message(reason)
+                return ChatResponse(
+                    reply=block_message,
+                    lead_score=0,
+                    lead_type="rate_limited",
+                    action_taken="blocked",
+                    format_type="default"
+                )
+    except Exception as e:
+        # Never block on rate limit errors — fail open
+        print(f"[RATE_LIMIT] Error checking limits: {e}")
+
+    # ── Normal processing ──────────────────────────────────────────────────────
     try:
         response = await BotService.process_chat(request)
         return response
@@ -32,18 +131,26 @@ async def voice_chat(
     history: str = Form("[]")
 ):
     from ..services.bot_service import BotService
+    from ..services.rate_limiter import check_and_increment, get_bot_limits, get_friendly_block_message
+
+    # ── Check rate limits for voice too ───────────────────────────────────────
     try:
-        # Read the audio bytes and pass to whisper
+        limits = await get_bot_limits(bot_id)
+        if limits:
+            allowed, reason, _ = await check_and_increment(bot_id, limits)
+            if not allowed:
+                return {"error": "rate_limited", "message": get_friendly_block_message(reason)}
+    except Exception as e:
+        print(f"[RATE_LIMIT_VOICE] Error: {e}")
+
+    try:
         audio_bytes = await file.read()
         file_tuple = (file.filename or "audio.webm", audio_bytes, file.content_type)
         transcript_text = await transcribe_audio(file_tuple)
 
-        # Build history objects
         history_dicts = json.loads(history)
         history_objs = [ChatMessage(**h) for h in history_dicts]
 
-        # Call BotService with the transcribed text
-        # Overwrite the message slightly to enforce casual spoken constraints
         request = ChatRequest(
             bot_id=bot_id,
             session_id=session_id,
@@ -53,7 +160,6 @@ async def voice_chat(
 
         response = await BotService.process_chat(request)
 
-        # Generate audio response
         bot_audio_bytes = await generate_speech(response.reply, "nova")
         audio_b64 = base64.b64encode(bot_audio_bytes).decode("utf-8")
 
@@ -67,11 +173,11 @@ async def voice_chat(
     except Exception as e:
         return {"error": str(e)}
 
+
 @router.post("/whatsapp")
 async def whatsapp_webhook(payload: dict):
     from ..services.bot_service import BotService
     try:
-        # Standard WhatsApp Cloud API payload format
         entry = payload.get("entry", [{}])[0]
         changes = entry.get("changes", [{}])[0]
         value = changes.get("value", {})
@@ -84,10 +190,8 @@ async def whatsapp_webhook(payload: dict):
         phone_number = msg.get("from")
         body = msg.get("text", {}).get("body", "")
         
-        # Hardcoding a master bot ID for MVP, or extract from phone/tenant config
         bot_id = "spa_ai" 
         
-        # We use their phone number as the session ID so context persists memory seamlessly
         request = ChatRequest(
             bot_id=bot_id,
             session_id=phone_number,
@@ -96,10 +200,103 @@ async def whatsapp_webhook(payload: dict):
         )
         
         response = await BotService.process_chat(request)
-        
-        # Usually here you would send a POST request to Meta's API to reply.
-        # e.g., requests.post("https://graph.facebook.com/v22.0/.../messages", json={"to": phone_number, "text": {"body": response.reply}})
-        
         return {"status": "success", "reply": response.reply}
     except Exception as e:
         return {"status": "error", "detail": str(e)}
+
+
+# ── Rate Limit Admin Endpoints ─────────────────────────────────────────────────
+
+@router.post("/{bot_id}/rate-limits", dependencies=[Depends(get_current_user)])
+async def set_bot_rate_limits(bot_id: str, req: dict):
+    """
+    Set rate limits for a bot with flexible duration selection.
+    
+    New format supports:
+    {
+        "primaryLimit": { "value": 500, "duration": "month" | "day" | "hour" | "minute" },
+        "secondaryLimit": { "value": 50, "duration": "day" },  # Optional - spike protection
+        "burstLimit": 50,  # Optional
+        "maxBots": 5  # Optional
+    }
+    
+    Also supports legacy format for backward compatibility.
+    """
+    from ..integrations.supabase_client import get_supabase_client
+    
+    supabase = get_supabase_client()
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database unavailable")
+    
+    try:
+        # Handle both new flexible format and legacy format
+        limits_to_save = {}
+        
+        # Primary limit
+        if "primaryLimit" in req and req["primaryLimit"] and req["primaryLimit"].get("value"):
+            limits_to_save["primaryLimit"] = {
+                "value": int(req["primaryLimit"]["value"]),
+                "duration": req["primaryLimit"].get("duration", "month")
+            }
+        
+        # Secondary limit (optional spike protection)
+        if "secondaryLimit" in req and req["secondaryLimit"] and req["secondaryLimit"].get("value"):
+            limits_to_save["secondaryLimit"] = {
+                "value": int(req["secondaryLimit"]["value"]),
+                "duration": req["secondaryLimit"].get("duration", "day")
+            }
+        
+        # Burst limit (optional)
+        if "burstLimit" in req and req.get("burstLimit"):
+            limits_to_save["burstLimit"] = int(req["burstLimit"])
+        
+        # Max bots (optional)
+        if "maxBots" in req and req.get("maxBots"):
+            limits_to_save["maxBots"] = int(req["maxBots"])
+        
+        # Support legacy format for backward compatibility
+        legacy_keys = ["monthly_messages", "messages_per_day", "messages_per_hour", "api_calls_per_minute"]
+        if any(key in req for key in legacy_keys):
+            limits_to_save["monthlyMessages"] = int(req.get("monthly_messages", 999999))
+            limits_to_save["messagesPerDay"] = int(req.get("messages_per_day", 999999))
+            limits_to_save["messagesPerHour"] = int(req.get("messages_per_hour", 999999))
+            limits_to_save["apiCallsPerMinute"] = int(req.get("api_calls_per_minute", 999999))
+        
+        supabase.table("bots").update({"rate_limits": limits_to_save}).eq("id", bot_id).execute()
+        return {"status": "updated", "bot_id": bot_id, "limits": limits_to_save}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{bot_id}/rate-limits", dependencies=[Depends(get_current_user)])
+async def get_bot_rate_limits(bot_id: str):
+    """Get the current rate limits and usage counters for a bot."""
+    from ..services.rate_limiter import get_bot_limits, _window_keys, _now_utc, _get_supabase_count, _get_memory
+
+    supabase = get_supabase_client()
+    limits = await get_bot_limits(bot_id)
+    
+    now = _now_utc()
+    windows = _window_keys(now)
+    
+    counts = {}
+    for label, window in windows.items():
+        if supabase:
+            counts[label] = _get_supabase_count(supabase, bot_id, window)
+        else:
+            counts[label] = _get_memory(bot_id, window)
+    
+    return {
+        "bot_id": bot_id,
+        "limits": limits,
+        "current_usage": counts,
+        "windows": windows,
+    }
+
+
+@router.delete("/{bot_id}/rate-limits/reset", dependencies=[Depends(get_current_user)])
+async def reset_bot_counters(bot_id: str):
+    """Reset all rate limit counters for a bot (admin only - for testing)."""
+    from ..services.rate_limiter import reset_counters
+    await reset_counters(bot_id)
+    return {"status": "reset", "bot_id": bot_id}

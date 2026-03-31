@@ -1,13 +1,15 @@
 import { useState, useEffect } from "react";
-import { X, ArrowUpDown, ArrowDown, ArrowUp, RefreshCw } from "lucide-react";
-import { API_BASE } from "../../../lib/api";
+import { X, ArrowUpDown, ArrowDown, ArrowUp, RefreshCw, Download } from "lucide-react";
+import { API_BASE, authFetch } from "../../../lib/api";
+import { TopProgressBar, SkeletonRow } from "./PageLoader";
+import { useAuth } from "../context/AuthContext";
 
 type SortKey = "created_at" | "score";
 type SortDir = "asc" | "desc";
 
 function timeAgo(dateStr: string): string {
     if (!dateStr) return "—";
-    const diff = Date.now() - new Date(dateStr).getTime();
+    const diff = (Date.now() - new Date(dateStr).getTime());
     const mins = Math.floor(diff / 60000);
     if (mins < 2) return "Just now";
     if (mins < 60) return `${mins}m ago`;
@@ -24,7 +26,9 @@ function isNew(dateStr: string): boolean {
 }
 
 export default function LeadsView() {
+    const { user } = useAuth();
     const [leads, setLeads] = useState<any[]>([]);
+    const [logs, setLogs] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedLead, setSelectedLead] = useState<any>(null);
     const [sortKey, setSortKey] = useState<SortKey>("created_at");
@@ -32,14 +36,21 @@ export default function LeadsView() {
     const [filterStatus, setFilterStatus] = useState<string>("all");
 
     const fetchLeads = () => {
+        if (!user) return;
         setLoading(true);
-        fetch(`${API_BASE}/api/admin/leads`)
-            .then(res => res.json())
-            .then(data => { setLeads(Array.isArray(data) ? data : []); setLoading(false); })
-            .catch(() => setLoading(false));
+        const botIdsParam = user.role === "super_admin" ? "" : `?bot_ids=${user.botIds?.join(",") || "NONE"}`;
+        
+        Promise.all([
+            authFetch(`${API_BASE}/api/admin/leads${botIdsParam}`).then(res => res.json()),
+            authFetch(`${API_BASE}/api/admin/logs${botIdsParam}`).then(res => res.json())
+        ]).then(([leadsData, logsData]) => {
+            setLeads(Array.isArray(leadsData) ? leadsData : []);
+            setLogs(Array.isArray(logsData) ? logsData : []);
+            setLoading(false);
+        }).catch(() => setLoading(false));
     };
 
-    useEffect(() => { fetchLeads(); }, []);
+    useEffect(() => { fetchLeads(); }, [user]);
 
     const toggleSort = (key: SortKey) => {
         if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -61,6 +72,38 @@ export default function LeadsView() {
             }
             return sortDir === "desc" ? (b.score || 0) - (a.score || 0) : (a.score || 0) - (b.score || 0);
         });
+
+    const handleExportCsv = () => {
+        if (filtered.length === 0) return;
+        const headers = ["Name", "Phone", "Email", "Business Interest", "Source", "Date", "Conversation Summary", "Lead Score"];
+        const csvRows = [headers.join(",")];
+        filtered.forEach(lead => {
+            const nameMatch = lead.summary?.match(/Name:\s*([^\n]+)/i);
+            const phoneMatch = lead.summary?.match(/Phone:\s*([^\n]+)/i);
+            const emailMatch = lead.summary?.match(/Email:\s*([^\n]+)/i);
+            
+            const name = `"${(lead.name || nameMatch?.[1] || '').trim().replace(/"/g, '""')}"`;
+            const phone = `"${(lead.phone || phoneMatch?.[1] || '').trim().replace(/"/g, '""')}"`;
+            const email = `"${(lead.email || emailMatch?.[1] || '').trim().replace(/"/g, '""')}"`;
+            const interest = `"${(lead.type || '').trim().replace(/"/g, '""')}"`;
+            const source = `"${(lead.bot_id || 'Website').trim().replace(/"/g, '""')}"`;
+            const date = `"${new Date(lead.created_at).toLocaleString().replace(/"/g, '""')}"`;
+            const summary = `"${(lead.summary || '').trim().replace(/"/g, '""')}"`;
+            const score = `"${lead.score || 0}"`;
+            
+            csvRows.push([name, phone, email, interest, source, date, summary, score].join(","));
+        });
+        
+        const blob = new Blob([csvRows.join("\n")], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `leads_export_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    };
 
     return (
         <div className="space-y-6">
@@ -115,6 +158,13 @@ export default function LeadsView() {
                 <button onClick={fetchLeads} className="ml-auto flex items-center gap-1.5 text-gray-500 hover:text-gray-300 transition-colors text-xs font-semibold">
                     <RefreshCw size={13} /> Refresh
                 </button>
+                <button
+                    onClick={handleExportCsv}
+                    disabled={filtered.length === 0}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 disabled:opacity-50"
+                >
+                    <Download size={13} /> Export Leads &rarr; CSV
+                </button>
             </div>
 
             <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden backdrop-blur-sm">
@@ -134,7 +184,7 @@ export default function LeadsView() {
                     </thead>
                     <tbody className="divide-y divide-white/5 text-sm">
                         {loading ? (
-                            <tr><td colSpan={7} className="p-8 text-center text-gray-500">Loading leads...</td></tr>
+                            <>{loading && <TopProgressBar />}<SkeletonRow cols={7} /><SkeletonRow cols={7} /><SkeletonRow cols={7} /><SkeletonRow cols={7} /><SkeletonRow cols={7} /></>
                         ) : filtered.length === 0 ? (
                             <tr><td colSpan={7} className="p-8 text-center text-gray-500">No leads match this filter.</td></tr>
                         ) : (
@@ -233,13 +283,49 @@ export default function LeadsView() {
                                             ))}
                                         </div>
                                         <div>
-                                            <p className="text-gray-400 text-sm mb-2 mt-4">Full AI Summary</p>
-                                            <div className="bg-white/5 p-4 rounded-xl text-gray-200 text-sm leading-relaxed border border-white/5 whitespace-pre-wrap">{selectedLead.summary}</div>
+                                            <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mb-3 mt-6 ml-1">AI Context & Transcript</p>
+                                            
+                                            {/* Chat Replay Component */}
+                                            <div className="bg-black/40 border border-white/5 rounded-2xl overflow-hidden mb-6">
+                                                <div className="bg-white/5 px-4 py-2 border-b border-white/5 flex items-center justify-between">
+                                                    <span className="text-[10px] font-bold text-gray-500">CONVERSATION REPLAY</span>
+                                                    <div className="flex gap-1">
+                                                        <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" />
+                                                        <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse delay-75" />
+                                                        <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse delay-150" />
+                                                    </div>
+                                                </div>
+                                                <div className="p-4 space-y-4 max-h-64 overflow-y-auto custom-scrollbar flex flex-col">
+                                                    {logs.filter(l => l.session_id === selectedLead.session_id).sort((a,b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()).map((log, li) => (
+                                                        <div key={li} className="space-y-3">
+                                                            <div className="flex flex-col items-end">
+                                                                <div className="bg-indigo-600/90 text-white text-xs px-3 py-2 rounded-xl rounded-tr-sm max-w-[90%] shadow-sm">
+                                                                    {log.user_message}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex flex-col items-start">
+                                                                <div className="bg-white/10 text-gray-200 text-xs px-3 py-2 rounded-xl rounded-tl-sm max-w-[90%] border border-white/5 shadow-sm whitespace-pre-wrap">
+                                                                    {log.bot_reply}
+                                                                </div>
+                                                                {log.confidence_score && (
+                                                                    <span className="text-[8px] text-gray-500 mt-1 uppercase font-black tracking-tighter ml-1">AI CONFIDENCE: {log.confidence_score}</span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                    {logs.filter(l => l.session_id === selectedLead.session_id).length === 0 && (
+                                                        <p className="text-center py-4 text-gray-600 text-xs italic">Transcript history not available for this legacy lead.</p>
+                                                    )}
+                                                </div>
+                                            </div>
 
-                                            {/* Status Update (Mock implementation for UI, real logic requires a PUT endpoint) */}
-                                            <div className="mt-6 flex justify-end gap-3 border-t border-white/10 pt-4">
-                                                <button onClick={() => { selectedLead.status = 'contacted'; setSelectedLead({ ...selectedLead }) }} className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${selectedLead.status === 'contacted' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/20' : 'bg-white/5 text-gray-300 hover:bg-white/10'}`}>Mark Contacted</button>
-                                                <button onClick={() => { selectedLead.status = 'closed'; setSelectedLead({ ...selectedLead }) }} className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${selectedLead.status === 'closed' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/20' : 'bg-white/5 text-gray-300 hover:bg-white/10'}`}>Mark Closed</button>
+                                            <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mb-2 ml-1">AI Extracted Summary</p>
+                                            <div className="bg-white/5 p-5 rounded-2xl text-gray-200 text-[13px] leading-relaxed border border-white/5 shadow-inner italic">"{selectedLead.summary}"</div>
+
+                                            {/* Status Update */}
+                                            <div className="mt-8 flex justify-end gap-3 border-t border-white/10 pt-6">
+                                                <button onClick={() => { selectedLead.status = 'contacted'; setSelectedLead({ ...selectedLead }) }} className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${selectedLead.status === 'contacted' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-white/5 text-gray-400 border border-white/5 hover:bg-white/10 hover:text-white'}`}>Mark Contacted</button>
+                                                <button onClick={() => { selectedLead.status = 'closed'; setSelectedLead({ ...selectedLead }) }} className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${selectedLead.status === 'closed' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-white/5 text-gray-400 border border-white/5 hover:bg-white/10 hover:text-white'}`}>Mark Closed</button>
                                             </div>
                                         </div>
                                     </>

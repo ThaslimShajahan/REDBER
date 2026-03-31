@@ -1,14 +1,19 @@
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApps } from "firebase/app";
+import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "placeholder",
-    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "placeholder",
-    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "placeholder",
-    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "placeholder",
-    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "placeholder",
-    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "placeholder"
+  apiKey: "AIzaSyCt5xsrB-AzJ1sNtGolKjJvERrCkLn-LhU",
+  authDomain: "redber-persona-mvp.firebaseapp.com",
+  projectId: "redber-persona-mvp",
+  storageBucket: "redber-persona-mvp.firebasestorage.app",
+  messagingSenderId: "5861574207",
+  appId: "1:5861574207:web:8826b67b566c2701089a8a",
 };
 
-const app = initializeApp(firebaseConfig);
+// Prevent re-initialisation in Next.js hot reload
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+
+export const auth = getAuth(app);
 export const db = getFirestore(app);
+export const googleProvider = new GoogleAuthProvider();
