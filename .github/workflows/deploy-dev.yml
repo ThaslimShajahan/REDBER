@@ -50,8 +50,8 @@ jobs:
 
             echo "🔑 Writing .env for DEV..."
             cat > .env << 'EOF'
-            SUPABASE_URL=${{ secrets.DEV_SUPABASE_URL }}
-            SUPABASE_KEY=${{ secrets.DEV_SUPABASE_KEY }}
+            SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+            SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}
             OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
             DEEPGRAM_API_KEY=${{ secrets.DEEPGRAM_API_KEY }}
             FIREBASE_SERVICE_ACCOUNT=${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
