@@ -3,9 +3,8 @@ name: 🧪 Deploy to DEV (dev.redber.in)
 on:
   push:
     branches: [dev]
-  workflow_dispatch:                # allow manual trigger from GitHub UI
+  workflow_dispatch:
 
-# Cancel any in-progress deployment on the same branch
 concurrency:
   group: deploy-dev
   cancel-in-progress: true
@@ -17,30 +16,28 @@ jobs:
   deploy-backend:
     name: 🐍 Backend → api.dev.redber.in
     runs-on: ubuntu-latest
-
     steps:
-      - name: 🚀 SSH into VPS and deploy backend
+      - name: 🚀 Deploy backend via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host:     ${{ secrets.VPS_HOST }}
+          host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.CP_BACKEND_DEV_USER }}
-          key:      ${{ secrets.VPS_SSH_KEY }}
-          port:     ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
           script: |
             set -e
             APP_DIR="/home/${{ secrets.CP_BACKEND_DEV_USER }}/htdocs/api.dev.redber.in"
 
-            echo "📦 Pulling latest code from dev branch..."
+            echo "📦 Cloning or updating repo (dev branch)..."
+            mkdir -p "$APP_DIR"
             if [ ! -d "$APP_DIR/.git" ]; then
-              git clone -b dev \
-                https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git \
-                "$APP_DIR"
+              git clone -b dev https://github.com/${{ github.repository }}.git "$APP_DIR"
             fi
             cd "$APP_DIR"
             git fetch origin dev
             git reset --hard origin/dev
 
-            echo "🐍 Setting up Python venv..."
+            echo "🐍 Setting up Python environment..."
             cd backend
             if [ ! -d "venv" ]; then
               python3 -m venv venv
@@ -50,26 +47,23 @@ jobs:
             pip install -r requirements.txt -q
 
             echo "🔑 Writing .env..."
-            cat > .env << ENVEOF
-SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}
-OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-DEEPGRAM_API_KEY=${{ secrets.DEEPGRAM_API_KEY }}
-FIREBASE_SERVICE_ACCOUNT=${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-ENVEOF
+            printf 'SUPABASE_URL=%s\n' "${{ secrets.SUPABASE_URL }}" > .env
+            printf 'SUPABASE_KEY=%s\n' "${{ secrets.SUPABASE_KEY }}" >> .env
+            printf 'OPENAI_API_KEY=%s\n' "${{ secrets.OPENAI_API_KEY }}" >> .env
+            printf 'DEEPGRAM_API_KEY=%s\n' "${{ secrets.DEEPGRAM_API_KEY }}" >> .env
+            printf 'FIREBASE_SERVICE_ACCOUNT=%s\n' "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" >> .env
 
-            echo "♻️  Starting/restarting backend (port 7090)..."
-            if pm2 list | grep -q redber-backend-dev; then
+            echo "♻️  Restarting backend (port 7090)..."
+            if pm2 list | grep -q "redber-backend-dev"; then
               pm2 restart redber-backend-dev
             else
-              pm2 start \
-                "venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 7090" \
+              pm2 start "venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 7090" \
                 --name redber-backend-dev \
                 --cwd "$(pwd)"
               pm2 save
             fi
 
-            echo "✅ Backend DEV live → api.dev.redber.in:7090"
+            echo "✅ Backend DEV deployed → api.dev.redber.in (port 7090)"
 
   # ─────────────────────────────────────────────────────────────
   # JOB 2 — Frontend → dev.redber.in (port 7000)
@@ -78,24 +72,22 @@ ENVEOF
     name: ⚡ Frontend → dev.redber.in
     runs-on: ubuntu-latest
     needs: deploy-backend
-
     steps:
-      - name: 🚀 SSH into VPS and deploy frontend
+      - name: 🚀 Deploy frontend via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host:     ${{ secrets.VPS_HOST }}
+          host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.CP_FRONTEND_DEV_USER }}
-          key:      ${{ secrets.VPS_SSH_KEY }}
-          port:     ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
           script: |
             set -e
             APP_DIR="/home/${{ secrets.CP_FRONTEND_DEV_USER }}/htdocs/dev.redber.in"
 
-            echo "📦 Pulling latest code from dev branch..."
+            echo "📦 Cloning or updating repo (dev branch)..."
+            mkdir -p "$APP_DIR"
             if [ ! -d "$APP_DIR/.git" ]; then
-              git clone -b dev \
-                https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git \
-                "$APP_DIR"
+              git clone -b dev https://github.com/${{ github.repository }}.git "$APP_DIR"
             fi
             cd "$APP_DIR"
             git fetch origin dev
@@ -105,11 +97,11 @@ ENVEOF
             cd frontend
             npm ci --prefer-offline -q
 
-            echo "🏗️  Building Next.js (API → api.dev.redber.in)..."
+            echo "🏗️  Building Next.js (API → https://api.dev.redber.in)..."
             NEXT_PUBLIC_API_URL=https://api.dev.redber.in npm run build
 
-            echo "♻️  Starting/restarting frontend (port 7000)..."
-            if pm2 list | grep -q redber-frontend-dev; then
+            echo "♻️  Restarting frontend (port 7000)..."
+            if pm2 list | grep -q "redber-frontend-dev"; then
               pm2 restart redber-frontend-dev
             else
               pm2 start "npm run start" \
@@ -119,4 +111,4 @@ ENVEOF
               pm2 save
             fi
 
-            echo "✅ Frontend DEV live → dev.redber.in:7000"
+            echo "✅ Frontend DEV deployed → dev.redber.in (port 7000)"
