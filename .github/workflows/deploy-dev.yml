@@ -47,13 +47,11 @@ jobs:
             pip install -r requirements.txt -q
 
             echo "🔑 Writing .env..."
-            cat > .env << 'ENVEOF'
-SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}
-OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-DEEPGRAM_API_KEY=${{ secrets.DEEPGRAM_API_KEY }}
-FIREBASE_SERVICE_ACCOUNT=${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-ENVEOF
+            printf 'SUPABASE_URL=%s\n' "${{ secrets.SUPABASE_URL }}" > .env
+            printf 'SUPABASE_KEY=%s\n' "${{ secrets.SUPABASE_KEY }}" >> .env
+            printf 'OPENAI_API_KEY=%s\n' "${{ secrets.OPENAI_API_KEY }}" >> .env
+            printf 'DEEPGRAM_API_KEY=%s\n' "${{ secrets.DEEPGRAM_API_KEY }}" >> .env
+            printf 'FIREBASE_SERVICE_ACCOUNT=%s\n' "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" >> .env
 
             echo "♻️  Restarting backend (port 7090)..."
             if pm2 list | grep -q "redber-backend-dev"; then
