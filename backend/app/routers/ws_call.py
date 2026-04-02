@@ -137,10 +137,18 @@ async def generate_and_speak(
         booking_rules = "GENERAL BOOKING: If user wants to book, collect their contact details and preferred time."
 
     # Build the chat message list for OpenAI
+    import datetime
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d %I:%M %p")
+    current_date = datetime.datetime.now().strftime("%A, %B %d, %Y")
+
     system = {
         "role": "system",
         "content": (
             f"{persona}\n\n"
+            "Current Date and Time Information (CRITICAL CONTEXT):\n"
+            f"- Current Date: {current_date}\n"
+            f"- Current Time: {current_time}\n"
+            "- Use this information to correctly interpret terms like 'today', 'tomorrow', and 'next week'.\n\n"
             "REAL-TIME VOICE CALL RULES (HUMAN-LIKE):\n"
             "- Speak naturally and warmly, like a friendly human on the phone.\n"
             "- Use natural fillers occasionally (e.g., 'Hmm', 'Right', 'Got it').\n"

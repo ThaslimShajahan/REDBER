@@ -191,7 +191,16 @@ class BotService:
 
         # 2. Formulate Chat Prompt - Merging DB persona + Config UI + Context
         _no_kb_msg = "⚠️ No knowledge base data found for this query. Do NOT invent or guess anything. Tell the user you don't have that information yet and offer to connect them with the team."
+        import datetime
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %I:%M %p")
+        current_date = datetime.datetime.now().strftime("%A, %B %d, %Y")
+
         system_prompt = f"""{persona}
+
+Current Date and Time Information (CRITICAL CONTEXT):
+- Current Date: {current_date}
+- Current Time: {current_time}
+- Use this information to correctly interpret terms like "today", "tomorrow", "next week", "later today" and to ensure reservations exist in the future.
 
 {goal_text}
 
