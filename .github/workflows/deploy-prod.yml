@@ -29,15 +29,16 @@ jobs:
           script: |
             set -e
             APP_DIR="/home/${{ secrets.CP_BACKEND_PROD_USER }}/htdocs/api.redber.in"
+            mkdir -p "$APP_DIR"
             cd "$APP_DIR"
 
-            echo "📦 Pulling latest code from main branch..."
+            echo "📦 Syncing repo (main branch)..."
             if [ ! -d ".git" ]; then
-              git clone -b main https://github.com/${{ github.repository }}.git .
-            else
-              git fetch origin main
-              git reset --hard origin/main
+              git init
+              git remote add origin https://github.com/${{ github.repository }}.git
             fi
+            git fetch origin main
+            git reset --hard origin/main
 
             echo "🐍 Installing Python deps..."
             cd backend
@@ -49,11 +50,11 @@ jobs:
             pip install -r requirements.txt -q
 
             echo "🔑 Writing .env for PRODUCTION..."
-            printf 'SUPABASE_URL=%s\n'               "${{ secrets.SUPABASE_URL }}"               > .env
-            printf 'SUPABASE_KEY=%s\n'               "${{ secrets.SUPABASE_KEY }}"               >> .env
-            printf 'OPENAI_API_KEY=%s\n'             "${{ secrets.OPENAI_API_KEY }}"             >> .env
-            printf 'DEEPGRAM_API_KEY=%s\n'           "${{ secrets.DEEPGRAM_API_KEY }}"           >> .env
-            printf 'FIREBASE_SERVICE_ACCOUNT=%s\n'   "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}"   >> .env
+            printf 'SUPABASE_URL=%s\n'             "${{ secrets.SUPABASE_URL }}"           > .env
+            printf 'SUPABASE_KEY=%s\n'             "${{ secrets.SUPABASE_KEY }}"           >> .env
+            printf 'OPENAI_API_KEY=%s\n'           "${{ secrets.OPENAI_API_KEY }}"         >> .env
+            printf 'DEEPGRAM_API_KEY=%s\n'         "${{ secrets.DEEPGRAM_API_KEY }}"       >> .env
+            printf 'FIREBASE_SERVICE_ACCOUNT=%s\n' "$(echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' | tr -d '\n')" >> .env
 
             echo "♻️  Restarting backend via PM2..."
             if pm2 list | grep -q "redber-backend$"; then
@@ -86,15 +87,16 @@ jobs:
           script: |
             set -e
             APP_DIR="/home/${{ secrets.CP_FRONTEND_PROD_USER }}/htdocs/redber.in"
+            mkdir -p "$APP_DIR"
             cd "$APP_DIR"
 
-            echo "📦 Pulling latest code from main branch..."
+            echo "📦 Syncing repo (main branch)..."
             if [ ! -d ".git" ]; then
-              git clone -b main https://github.com/${{ github.repository }}.git .
-            else
-              git fetch origin main
-              git reset --hard origin/main
+              git init
+              git remote add origin https://github.com/${{ github.repository }}.git
             fi
+            git fetch origin main
+            git reset --hard origin/main
 
             echo "📦 Installing Node dependencies..."
             cd frontend
