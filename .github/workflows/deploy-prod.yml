@@ -57,14 +57,12 @@ jobs:
             printf 'FIREBASE_SERVICE_ACCOUNT=%s\n' "$(echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' | tr -d '\n')" >> .env
 
             echo "♻️  Restarting backend via PM2..."
-            if pm2 list | grep -q "redber-backend$"; then
-              pm2 restart redber-backend
-            else
-              pm2 start "venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000" \
-                --name redber-backend \
-                --cwd "$(pwd)"
-              pm2 save
-            fi
+            pm2 delete redber-backend-prod 2>/dev/null || true
+            pm2 delete redber-backend 2>/dev/null || true
+            pm2 start "venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000" \
+              --name redber-backend-prod \
+              --cwd "$(pwd)"
+            pm2 save
 
             echo "✅ Backend PROD deployed to api.redber.in"
 
@@ -106,13 +104,10 @@ jobs:
             NEXT_PUBLIC_API_URL=https://api.redber.in npm run build
 
             echo "♻️  Restarting frontend via PM2..."
-            if pm2 list | grep -q "redber-frontend$"; then
-              pm2 restart redber-frontend
-            else
-              pm2 start "npm run start -- --port 3000" \
-                --name redber-frontend \
-                --cwd "$(pwd)"
-              pm2 save
-            fi
+            pm2 delete redber-frontend-prod 2>/dev/null || true
+            pm2 start "npm run start -- --port 3000" \
+              --name redber-frontend-prod \
+              --cwd "$(pwd)"
+            pm2 save
 
             echo "✅ Frontend PROD deployed to redber.in"
