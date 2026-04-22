@@ -87,14 +87,14 @@ export default function Home() {
         .hero-glow-tl { position: absolute; top: -15%; left: -10%; width: 700px; height: 700px; background: radial-gradient(circle, rgba(100,220,255,0.12) 0%, transparent 65%); border-radius: 50%; pointer-events: none; z-index: 0; }
         .hero-glow-tr { position: absolute; top: -5%; right: -8%; width: 600px; height: 600px; background: radial-gradient(circle, rgba(180,100,255,0.1) 0%, transparent 65%); border-radius: 50%; pointer-events: none; z-index: 0; }
         .hero-glow-b { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 900px; height: 400px; background: radial-gradient(ellipse, rgba(198,244,50,0.08) 0%, transparent 65%); border-radius: 50%; pointer-events: none; z-index: 0; }
-        h1.hero-h1 { position: relative; z-index: 2; font-size: clamp(3.2rem, 7vw, 6.5rem); font-weight: 900; line-height: 1; letter-spacing: -0.04em; margin-bottom: 3rem; color: #fff; }
-        .hero-h1-top { display: flex; align-items: center; justify-content: center; gap: 0.5rem; flex-wrap: wrap; }
+        h1.hero-h1 { position: relative; z-index: 2; font-size: clamp(3.2rem, 7vw, 6.5rem); font-weight: 900; line-height: 1.15; letter-spacing: -0.04em; margin-bottom: 3rem; color: #fff; }
+        .hero-h1-top { display: flex; align-items: center; justify-content: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.25em; }
         @keyframes shimmer-sweep {
-          0%   { background-position: 0% center; }
+          0%   { background-position: -100% center; }
           100% { background-position: 200% center; }
         }
-        .metallic-text { display: block; background: linear-gradient(90deg, #444 0%, #666 30%, #c9893a 44%, #f0c060 50%, #c9893a 56%, #666 70%, #444 100%); background-size: 300% auto; -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: shimmer-sweep 7s linear infinite; }
-        .hero-shimmer { background: linear-gradient(90deg, #666 0%, #999 30%, #c9893a 44%, #f0c060 50%, #c9893a 56%, #999 70%, #666 100%); background-size: 300% auto; -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: shimmer-sweep 7s linear infinite; }
+        .metallic-text { display: block; background: linear-gradient(90deg, #fff 0%, rgba(255,255,255,0.75) 20%, #C6F432 38%, #64dcff 50%, #C6F432 62%, rgba(255,255,255,0.75) 80%, #fff 100%); background-size: 300% auto; -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; animation: shimmer-sweep 6s linear infinite; }
+        .hero-shimmer { display: inline; background: linear-gradient(90deg, #fff 0%, rgba(255,255,255,0.75) 20%, #C6F432 38%, #64dcff 50%, #C6F432 62%, rgba(255,255,255,0.75) 80%, #fff 100%); background-size: 300% auto; -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; animation: shimmer-sweep 6s linear infinite; }
 
         /* Hero 3-column grid */
         .hero-grid { display: grid; grid-template-columns: 1fr 480px 1fr; gap: 2rem; align-items: center; max-width: 1280px; margin: 0 auto; }
