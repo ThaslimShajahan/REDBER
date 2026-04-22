@@ -56,8 +56,31 @@ export default function Home() {
       .catch(() => { setBots([]); setLoadingBots(false); });
   }, []);
 
+  const faqJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": faqs.map(f => ({
+      "@type": "Question",
+      "name": f.q,
+      "acceptedAnswer": { "@type": "Answer", "text": f.a }
+    }))
+  };
+
+  const softwareJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Redber",
+    "applicationCategory": "BusinessApplication",
+    "operatingSystem": "Web",
+    "description": "AI-powered receptionist platform that handles reservations, captures leads, and engages customers 24/7 via chat and voice.",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD", "availability": "https://schema.org/InStock" },
+    "aggregateRating": { "@type": "AggregateRating", "ratingValue": "4.9", "ratingCount": "120" }
+  };
+
   return (
     <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareJsonLd) }} />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -777,7 +800,7 @@ export default function Home() {
           <div className="ops-grid">
             <div className="ops-col">
               <motion.div className="ops-card" {...fadeUp(0)}>
-                <img src="https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=600&h=400&fit=crop" alt="" className="ops-img" />
+                <img src="/img_assets/leads.jpg" alt="AI lead capture dashboard" className="ops-img" />
               </motion.div>
               <motion.div className="ops-card ops-yellow" {...fadeUp(0.1)}>
                 <h3>24/7 Appointment Booking</h3>
@@ -792,7 +815,7 @@ export default function Home() {
                 <Link href="/contact" className="gf-btn-pill gf-btn-dark" style={{ alignSelf: "flex-start" }}>Learn More</Link>
               </motion.div>
               <motion.div className="ops-card" {...fadeUp(0.3)}>
-                <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=600&h=600&fit=crop" alt="" className="ops-img ops-img-tall" />
+                <img src="/img_assets/multi_ling.jpg" alt="Multi-language AI receptionist" className="ops-img ops-img-tall" />
                 <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(to top, #141414 60%, transparent)", padding: "5rem 2rem 2rem" }}>
                   <h3 style={{ fontSize: "1.4rem", fontWeight: 900, marginBottom: "0.5rem", color: "#fff" }}>Always-On Multi-Language</h3>
                   <p style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.5)", marginBottom: "1rem" }}>Your business never closes. Redber responds instantly in English, Arabic, Spanish, French, and more — perfectly interpreting user intent.</p>
