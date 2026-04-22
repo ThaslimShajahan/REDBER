@@ -312,7 +312,9 @@ export default function Home() {
         {isMobileMenuOpen && (
           <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} style={{ position: "fixed", top: 0, left: 0, right: 0, background: "#0d0d0d", zIndex: 9999, padding: "1.5rem", borderBottom: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 10px 40px rgba(0,0,0,0.5)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
-              <img src="/logo/Redber Logo white.svg" alt="Redber" style={{ height: 40, width: "auto" }} onError={(e) => { (e.target as HTMLImageElement).src = "/logo/Redber Logo Black.svg"; (e.target as HTMLImageElement).style.filter = "invert(1)"; }} />
+              <Link href="/" onClick={() => setIsMobileMenuOpen(false)} style={{ display: "flex", alignItems: "center" }}>
+                <img src="/logo/Redber Logo white.svg" alt="Redber" style={{ height: 40, width: "auto" }} onError={(e) => { (e.target as HTMLImageElement).src = "/logo/Redber Logo Black.svg"; (e.target as HTMLImageElement).style.filter = "invert(1)"; }} />
+              </Link>
               <button onClick={() => setIsMobileMenuOpen(false)} style={{ background: "rgba(255,255,255,0.1)", color: "#fff", border: "none", borderRadius: "50%", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><X size={24}/></button>
             </div>
             <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "1.5rem", fontSize: "1.2rem", fontWeight: 700 }}>
