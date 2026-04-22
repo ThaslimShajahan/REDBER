@@ -49,16 +49,14 @@ jobs:
             pip install -r requirements.txt -q
 
             echo "🔑 Writing .env for PRODUCTION..."
-            cat > .env << 'EOF'
-            SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-            SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}
-            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-            DEEPGRAM_API_KEY=${{ secrets.DEEPGRAM_API_KEY }}
-            FIREBASE_SERVICE_ACCOUNT=${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-            EOF
+            printf 'SUPABASE_URL=%s\n'               "${{ secrets.SUPABASE_URL }}"               > .env
+            printf 'SUPABASE_KEY=%s\n'               "${{ secrets.SUPABASE_KEY }}"               >> .env
+            printf 'OPENAI_API_KEY=%s\n'             "${{ secrets.OPENAI_API_KEY }}"             >> .env
+            printf 'DEEPGRAM_API_KEY=%s\n'           "${{ secrets.DEEPGRAM_API_KEY }}"           >> .env
+            printf 'FIREBASE_SERVICE_ACCOUNT=%s\n'   "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}"   >> .env
 
             echo "♻️  Restarting backend via PM2..."
-            if pm2 list | grep -q redber-backend; then
+            if pm2 list | grep -q "redber-backend$"; then
               pm2 restart redber-backend
             else
               pm2 start "venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000" \
@@ -106,10 +104,10 @@ jobs:
             NEXT_PUBLIC_API_URL=https://api.redber.in npm run build
 
             echo "♻️  Restarting frontend via PM2..."
-            if pm2 list | grep -q redber-frontend; then
+            if pm2 list | grep -q "redber-frontend$"; then
               pm2 restart redber-frontend
             else
-              pm2 start "npm run start" \
+              pm2 start "npm run start -- --port 3000" \
                 --name redber-frontend \
                 --cwd "$(pwd)"
               pm2 save
