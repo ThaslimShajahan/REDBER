@@ -105,7 +105,7 @@ jobs:
 
             echo "♻️  Restarting frontend via PM2..."
             pm2 delete redber-frontend-prod 2>/dev/null || true
-            pm2 start "npm run start -- --port 3000" \
+            pm2 start "npm run start -- --port 4000" \
               --name redber-frontend-prod \
               --cwd "$(pwd)"
             pm2 save
