@@ -16,12 +16,22 @@ Table schema (run once in Supabase SQL editor):
 
 """
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Optional, Tuple
 from app.integrations.supabase_client import get_supabase_client
+import time
 
 # ── In-memory fallback (if Supabase table isn't created yet) ──────────────────
 _memory_counters: dict = {}
+
+# ── Dynamic Fallbacks ────────────────────────────────────────────────────────
+_supabase_counters_available = True
+_supabase_limits_available = True
+
+# ── In-memory cache for bot rate-limit configs (TTL 60s) ─────────────────────
+_limits_cache: dict = {}   # bot_id -> (limits_dict, fetched_at)
+_LIMITS_CACHE_TTL = 60     # seconds
 
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
@@ -52,6 +62,9 @@ def _increment_supabase(supabase, bot_id: str, window: str) -> int:
     Upsert a rate counter row and return the updated count.
     Uses Supabase upsert (insert or increment).
     """
+    global _supabase_counters_available
+    if not _supabase_counters_available:
+        return _inc_memory(bot_id, window)
     try:
         # Try to get existing
         res = supabase.table("rate_counters").select("count").eq("bot_id", bot_id).eq("window", window).execute()
@@ -63,17 +76,26 @@ def _increment_supabase(supabase, bot_id: str, window: str) -> int:
             supabase.table("rate_counters").insert({"bot_id": bot_id, "window": window, "count": 1}).execute()
         return new_count
     except Exception as e:
+        err_str = str(e)
+        if "PGRST205" in err_str or "does not exist" in err_str:
+            _supabase_counters_available = False
         print(f"[RateLimiter] Supabase counter error: {e}")
         return _inc_memory(bot_id, window)
 
 
 def _get_supabase_count(supabase, bot_id: str, window: str) -> int:
+    global _supabase_counters_available
+    if not _supabase_counters_available:
+        return _get_memory(bot_id, window)
     try:
         res = supabase.table("rate_counters").select("count").eq("bot_id", bot_id).eq("window", window).execute()
         if res.data:
             return res.data[0]["count"]
         return 0
-    except Exception:
+    except Exception as e:
+        err_str = str(e)
+        if "PGRST205" in err_str or "does not exist" in err_str:
+            _supabase_counters_available = False
         return _get_memory(bot_id, window)
 
 
@@ -109,13 +131,21 @@ async def check_and_increment(
     now = _now_utc()
     windows = _window_keys(now)
     supabase = get_supabase_client()
+    loop = asyncio.get_event_loop()
 
-    # ── Gather current counts BEFORE incrementing ─────────────────────────────
+    # ── Gather current counts in PARALLEL (4 reads at once) ──────────────────
     if supabase:
-        curr_month  = _get_supabase_count(supabase, bot_id, windows["month"])
-        curr_day    = _get_supabase_count(supabase, bot_id, windows["day"])
-        curr_hour   = _get_supabase_count(supabase, bot_id, windows["hour"])
-        curr_minute = _get_supabase_count(supabase, bot_id, windows["minute"])
+        results = await asyncio.gather(
+            loop.run_in_executor(None, _get_supabase_count, supabase, bot_id, windows["month"]),
+            loop.run_in_executor(None, _get_supabase_count, supabase, bot_id, windows["day"]),
+            loop.run_in_executor(None, _get_supabase_count, supabase, bot_id, windows["hour"]),
+            loop.run_in_executor(None, _get_supabase_count, supabase, bot_id, windows["minute"]),
+            return_exceptions=True
+        )
+        curr_month  = results[0] if not isinstance(results[0], Exception) else _get_memory(bot_id, windows["month"])
+        curr_day    = results[1] if not isinstance(results[1], Exception) else _get_memory(bot_id, windows["day"])
+        curr_hour   = results[2] if not isinstance(results[2], Exception) else _get_memory(bot_id, windows["hour"])
+        curr_minute = results[3] if not isinstance(results[3], Exception) else _get_memory(bot_id, windows["minute"])
     else:
         curr_month  = _get_memory(bot_id, windows["month"])
         curr_day    = _get_memory(bot_id, windows["day"])
@@ -180,12 +210,15 @@ async def check_and_increment(
         if per_min_limit < 999999 and curr_minute >= per_min_limit:
             return False, f"rate_limit_per_minute:{curr_minute}/{per_min_limit}", current_counts
 
-    # ── Allowed — increment all windows ───────────────────────────────────────
+    # ── Allowed — increment all windows fire-and-forget (don't block the response) ──
     if supabase:
-        _increment_supabase(supabase, bot_id, windows["month"])
-        _increment_supabase(supabase, bot_id, windows["day"])
-        _increment_supabase(supabase, bot_id, windows["hour"])
-        _increment_supabase(supabase, bot_id, windows["minute"])
+        asyncio.create_task(asyncio.gather(
+            loop.run_in_executor(None, _increment_supabase, supabase, bot_id, windows["month"]),
+            loop.run_in_executor(None, _increment_supabase, supabase, bot_id, windows["day"]),
+            loop.run_in_executor(None, _increment_supabase, supabase, bot_id, windows["hour"]),
+            loop.run_in_executor(None, _increment_supabase, supabase, bot_id, windows["minute"]),
+            return_exceptions=True
+        ))
     else:
         _inc_memory(bot_id, windows["month"])
         _inc_memory(bot_id, windows["day"])
@@ -256,16 +289,33 @@ def get_friendly_block_message(reason: str) -> str:
 async def get_bot_limits(bot_id: str) -> dict:
     """
     Fetch the rate limits for a given bot from the 'bots' table in Supabase.
-    Falls back to permissive defaults if no limits are stored.
+    Cached in memory for 60 s to avoid a DB round-trip on every message.
     """
+    # Return cached limits if fresh
+    cached = _limits_cache.get(bot_id)
+    if cached and (time.monotonic() - cached[1]) < _LIMITS_CACHE_TTL:
+        return cached[0]
+
+    global _supabase_limits_available
+    if not _supabase_limits_available:
+        return {}
+
     supabase = get_supabase_client()
     if not supabase:
         return {}
     try:
-        res = supabase.table("bots").select("rate_limits").eq("id", bot_id).execute()
-        if res.data and res.data[0].get("rate_limits"):
-            return res.data[0]["rate_limits"]
+        loop = asyncio.get_event_loop()
+        res = await loop.run_in_executor(
+            None,
+            lambda: supabase.table("bots").select("rate_limits").eq("id", bot_id).execute()
+        )
+        limits = res.data[0].get("rate_limits") if res.data else {}
+        _limits_cache[bot_id] = (limits or {}, time.monotonic())
+        return limits or {}
     except Exception as e:
+        err_str = str(e)
+        if "42703" in err_str or "does not exist" in err_str:
+            _supabase_limits_available = False
         print(f"[RateLimiter] Failed to fetch bot limits: {e}")
     return {}
 

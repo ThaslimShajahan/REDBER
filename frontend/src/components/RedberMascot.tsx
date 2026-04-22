@@ -1,518 +1,848 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Send } from "lucide-react";
+import { X, Send, Bot, ImagePlus } from "lucide-react";
 import { API_BASE } from "../lib/api";
+import * as THREE from "three";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
-const MASCOT_BOT_ID = "redber-assistant-001";
+const markdownComponents = {
+    p: ({ node, ...props }: any) => <p className="mb-2 last:mb-0 leading-relaxed font-sans text-[0.92rem]" {...props} />,
+    a: ({ node, ...props }: any) => <a target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 font-semibold underline underline-offset-4 break-words" {...props} />,
+    strong: ({ node, ...props }: any) => <strong className="font-bold text-white" {...props} />,
+    ul: ({ node, ...props }: any) => <ul className="list-disc pl-4 mb-3 space-y-1 block" {...props} />,
+    ol: ({ node, ...props }: any) => <ol className="list-decimal pl-4 mb-3 space-y-1 block" {...props} />,
+    li: ({ node, ...props }: any) => <li className="leading-relaxed text-[0.9rem]" {...props} />,
+};
 
-const QUIPS = [
-    "Peeking at you! 👀",
-    "Ask me about Redber! 🧠",
-    "I see you scrolling… 😏",
-    "Wanna chat? 😄",
-    "Build a bot like me! 🤖",
-    "Say hiiii! 👋",
-    "Got questions? 🤔",
-];
-
-// ─── Cute blob SVG ──────────────────────────────────────────
-function CuteBlob({ mood = "happy", size = 100, blinking = false }: {
-    mood?: "happy" | "surprised" | "excited" | "shy";
-    size?: number;
-    blinking?: boolean;
-}) {
-    const eyeRY = blinking ? 0.6 : 11;
-    return (
-        <svg viewBox="0 0 100 105" width={size} height={size} xmlns="http://www.w3.org/2000/svg">
-            <defs>
-                <radialGradient id="bg" cx="50%" cy="38%" r="58%">
-                    <stop offset="0%" stopColor="#a78bfa" />
-                    <stop offset="100%" stopColor="#6d28d9" />
-                </radialGradient>
-                <radialGradient id="belly" cx="50%" cy="50%" r="50%">
-                    <stop offset="0%" stopColor="#ede9fe" />
-                    <stop offset="100%" stopColor="#c4b5fd" />
-                </radialGradient>
-            </defs>
-
-            {/* Body */}
-            <ellipse cx="50" cy="58" rx="40" ry="44" fill="url(#bg)" />
-
-            {/* Ear left */}
-            <ellipse cx="22" cy="22" rx="10" ry="16" fill="#7c3aed" transform="rotate(-18,22,22)" />
-            <ellipse cx="22" cy="20" rx="6" ry="10" fill="#f9a8d4" transform="rotate(-18,22,20)" />
-            {/* Ear right */}
-            <ellipse cx="78" cy="22" rx="10" ry="16" fill="#7c3aed" transform="rotate(18,78,22)" />
-            <ellipse cx="78" cy="20" rx="6" ry="10" fill="#f9a8d4" transform="rotate(18,78,20)" />
-
-            {/* Belly patch */}
-            <ellipse cx="50" cy="68" rx="23" ry="25" fill="url(#belly)" opacity="0.55" />
-
-            {/* Logo on belly */}
-            <image
-                href="/redber_logo_transperent.png"
-                x="34" y="56" width="32" height="24"
-                preserveAspectRatio="xMidYMid meet"
-                style={{ filter: "brightness(0.8)" }}
-            />
-
-            {/* Shine */}
-            <ellipse cx="50" cy="36" rx="22" ry="10" fill="rgba(255,255,255,0.08)" />
-
-            {/* Left eye socket */}
-            <circle cx="34" cy="50" r="13" fill="#1a0533" />
-            {/* Left iris */}
-            <circle cx="34" cy="50" r="9" fill="#7c3aed" />
-            <circle cx="34" cy="50" r="5.5" fill="#3b0764" />
-            <ellipse cx="34" cy="50" rx="12" ry={eyeRY} fill="#1a0533" />
-            <circle cx="38" cy="45" r="3.5" fill="white" opacity="0.95" />
-            <circle cx="31" cy="52" r="1.8" fill="white" opacity="0.6" />
-
-            {/* Right eye socket */}
-            <circle cx="66" cy="50" r="13" fill="#1a0533" />
-            <circle cx="66" cy="50" r="9" fill="#7c3aed" />
-            <circle cx="66" cy="50" r="5.5" fill="#3b0764" />
-            <ellipse cx="66" cy="50" rx="12" ry={eyeRY} fill="#1a0533" />
-            <circle cx="70" cy="45" r="3.5" fill="white" opacity="0.95" />
-            <circle cx="63" cy="52" r="1.8" fill="white" opacity="0.6" />
-
-            {/* Cheeks */}
-            <ellipse cx="21" cy="64" rx="9" ry="6" fill="#f9a8d4" opacity="0.5" />
-            <ellipse cx="79" cy="64" rx="9" ry="6" fill="#f9a8d4" opacity="0.5" />
-
-            {/* Mouth */}
-            {mood === "surprised" && <ellipse cx="50" cy="77" rx="7" ry="8" fill="#1a0533" />}
-            {mood === "excited" && <path d="M37 75 Q50 90 63 75" fill="#f9a8d4" stroke="#1a0533" strokeWidth="2" strokeLinecap="round" />}
-            {mood === "shy" && <path d="M42 75 Q50 79 58 75" stroke="#1a0533" strokeWidth="2.5" fill="none" strokeLinecap="round" />}
-            {mood === "happy" && <path d="M37 73 Q50 86 63 73" stroke="#1a0533" strokeWidth="2.5" fill="none" strokeLinecap="round" />}
-
-            {/* Arms */}
-            <ellipse cx="12" cy="70" rx="8" ry="5" fill="#8b5cf6" transform="rotate(-35,12,70)" />
-            <ellipse cx="88" cy="70" rx="8" ry="5" fill="#8b5cf6" transform="rotate(35,88,70)" />
-
-            {/* Feet */}
-            <ellipse cx="36" cy="100" rx="13" ry="7" fill="#7c3aed" />
-            <ellipse cx="64" cy="100" rx="13" ry="7" fill="#7c3aed" />
-        </svg>
-    );
+class Spr {
+    v: number; tgt: number; vel: number; freq: number; damp: number;
+    constructor(v: number, freq = 5, damp = 1.0) { this.v = v; this.tgt = v; this.vel = 0; this.freq = freq; this.damp = damp; }
+    set(x: number) { this.v = this.tgt = x; this.vel = 0; }
+    step(dt: number) {
+        const w = 2 * Math.PI * this.freq;
+        this.vel += (w * w * (this.tgt - this.v) - 2 * this.damp * w * this.vel) * dt;
+        this.v += this.vel * dt; return this.v;
+    }
 }
 
-// ─── Dust cloud particle ─────────────────────────────────────
-function DustPuff({ delay = 0, x = 0 }: { delay?: number; x?: number }) {
-    return (
-        <motion.div
-            className="absolute bottom-[-10px] pointer-events-none"
-            style={{ left: x }}
-            initial={{ opacity: 1, scale: 0.5, y: 0 }}
-            animate={{ opacity: 0, scale: 2.5, y: -40 }}
-            transition={{ duration: 1.1, delay, ease: "easeOut", type: "tween" }}
-        >
-            <svg width="40" height="40" viewBox="0 0 32 32">
-                <circle cx="16" cy="16" r="14" fill="rgba(167,139,250,0.7)" />
-                <circle cx="10" cy="18" r="8" fill="rgba(196,181,253,0.6)" />
-                <circle cx="22" cy="18" r="8" fill="rgba(139,92,246,0.6)" />
-            </svg>
-        </motion.div>
-    );
-}
+const BOT_ID = "redber-assistant-001";
 
-function DustTrail({ direction }: { direction: "left" | "right" }) {
-    const [puffs, setPuffs] = useState<{ id: number; x: number; delay: number }[]>([]);
-    const counterRef = useRef(0);
-
-    useEffect(() => {
-        const iv = setInterval(() => {
-            const id = counterRef.current++;
-            // Dust appears behind the character based on direction
-            setPuffs(p => [
-                ...p.slice(-10),   // more puffs trailing
-                { id, x: direction === "right" ? -30 : 30, delay: 0 },
-            ]);
-        }, 120); // Faster frequency
-        return () => clearInterval(iv);
-    }, [direction]);
-
-    return (
-        <div className="relative">
-            {puffs.map(p => <DustPuff key={p.id} x={p.x} delay={p.delay} />)}
-        </div>
-    );
-}
-
-// ─── Peek configs per position ───────────────────────────────
-// We position the character so that MOST of the body is off-screen
-// Only the eyes / top / side peeking into view
-
-type PeekPos = "top" | "left" | "right" | "bottom-left" | "bottom-right" | "run-left" | "run-right";
-
-const PEEK_POSITIONS: PeekPos[] = ["top", "left", "right", "bottom-left", "bottom-right"];
-
-interface PeekConfig {
-    // Tailwind fixed position classes
-    posClass: string;
-    // translateX/Y when SHOWN (peeking)
-    shownX: string;
-    shownY: string;
-    // translateX/Y when HIDDEN (off screen)
-    hiddenX: string;
-    hiddenY: string;
-    // visual rotation of the creature
-    rotation: number;
-    flipX?: boolean;
-    mood: "happy" | "surprised" | "excited" | "shy";
-    bubbleDir: "below" | "above" | "right" | "left";
-    quipClass: string;
-}
-
-const CONFIGS: Record<PeekPos, PeekConfig> = {
-    top: {
-        posClass: "top-0 left-[45%]",
-        shownX: "0px", shownY: "70px",      // Hanging down to show body
-        hiddenX: "0px", hiddenY: "-160px",
-        rotation: 0,
-        mood: "surprised",
-        bubbleDir: "below",
-        quipClass: "mt-[95px]",
-    },
-    left: {
-        posClass: "top-[35%] left-0",
-        shownX: "-55px", shownY: "0px",       // right half peeks from left
-        hiddenX: "-140px", hiddenY: "0px",
-        rotation: 90,
-        mood: "surprised",
-        bubbleDir: "right",
-        quipClass: "ml-[80px] -mt-16",
-    },
-    right: {
-        posClass: "top-[35%] right-0",
-        shownX: "55px", shownY: "0px",        // left half peeks from right
-        hiddenX: "140px", hiddenY: "0px",
-        rotation: -90,
-        mood: "surprised",
-        bubbleDir: "left",
-        quipClass: "mr-[80px] -mt-16",
-    },
-    "bottom-left": {
-        posClass: "bottom-0 left-8",
-        shownX: "0px", shownY: "60px",        // just top (eyes) above bottom edge
-        hiddenX: "0px", hiddenY: "150px",
-        rotation: 0,
-        mood: "shy",
-        bubbleDir: "above",
-        quipClass: "mb-[60px]",
-    },
-    "bottom-right": {
-        posClass: "bottom-0 right-8",
-        shownX: "0px", shownY: "60px",
-        hiddenX: "0px", hiddenY: "150px",
-        rotation: 0,
-        mood: "excited",
-        bubbleDir: "above",
-        quipClass: "mb-[60px]",
-    },
-    "run-left": {
-        posClass: "bottom-4 left-0",
-        shownX: "110vw", shownY: "0px",
-        hiddenX: "-140px", hiddenY: "0px",
-        rotation: 0,
-        flipX: true,
-        mood: "excited",
-        bubbleDir: "above",
-        quipClass: "",
-    },
-    "run-right": {
-        posClass: "bottom-4 right-0",
-        shownX: "-110vw", shownY: "0px",
-        hiddenX: "140px", hiddenY: "0px",
-        rotation: 0,
-        mood: "excited",
-        bubbleDir: "above",
-        quipClass: "",
-    },
+// Shared drag state — lives outside React to bridge React pointerdown → Three.js animation loop
+const drag = {
+    active: false,
+    worldX: 0, worldY: 0,
+    startWorldY: 0,
+    velY: 0,      // drag velocity (for throw)
+    prevY: 0, prevT: 0,
 };
 
 export default function RedberMascot() {
     const [chatOpen, setChatOpen] = useState(false);
-    const [peekPos, setPeekPos] = useState<PeekPos>("bottom-right");
-    const [visible, setVisible] = useState(true);
-    const [quipIdx, setQuipIdx] = useState(0);
-    const [showQuip, setShowQuip] = useState(true);
-    const [blinking, setBlinking] = useState(false);
+    const [hitArea, setHitArea] = useState({ x: -300, y: -300, w: 60, h: 100 });
+    const [isDragging, setIsDragging] = useState(false);
     const [messages, setMessages] = useState<{ sender: string; text: string }[]>([
-        { sender: "bot", text: "Hey! 👋 I'm Redber! Ask me anything about this platform — features, pricing, or just say hi! 😄" }
+        { sender: "bot", text: "Hey! 👋 I'm Redber! Grab and throw me around, or ask me anything 😄" }
     ]);
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const sessionId = useRef(`landing-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
     const messagesEndRef = useRef<HTMLDivElement>(null);
-    const lastScrollY = useRef(0);
-    const cooldown = useRef(false);
-
-    // Scroll → re-peek from new position
-    const onScroll = useCallback(() => {
-        if (chatOpen || cooldown.current) return;
-        const diff = Math.abs(window.scrollY - lastScrollY.current);
-        lastScrollY.current = window.scrollY;
-        if (diff < 80) return;
-
-        cooldown.current = true;
-        setVisible(false);
-        setTimeout(() => {
-            const pool = PEEK_POSITIONS.filter(p => p !== peekPos);
-            setPeekPos(pool[Math.floor(Math.random() * pool.length)]);
-            setVisible(true);
-            setTimeout(() => { cooldown.current = false; }, 1500);
-        }, 550);
-    }, [chatOpen, peekPos]);
-
-    useEffect(() => {
-        window.addEventListener("scroll", onScroll, { passive: true });
-        return () => window.removeEventListener("scroll", onScroll);
-    }, [onScroll]);
-
-    // Quip cycle
-    useEffect(() => {
-        const iv = setInterval(() => {
-            setShowQuip(false);
-            setTimeout(() => { setQuipIdx(i => (i + 1) % QUIPS.length); setShowQuip(true); }, 350);
-        }, 5000);
-        return () => clearInterval(iv);
-    }, []);
-
-    // Blink
-    useEffect(() => {
-        const iv = setInterval(() => {
-            setBlinking(true); setTimeout(() => setBlinking(false), 280);
-        }, 3500);
-        return () => clearInterval(iv);
-    }, []);
-
-    // Random run across screen
-    useEffect(() => {
-        const iv = setInterval(() => {
-            if (chatOpen) return;
-            if (Math.random() > 0.55) {
-                const dir = Math.random() > 0.5 ? "run-left" : "run-right";
-                setVisible(false);
-                setTimeout(() => { setPeekPos(dir as PeekPos); setVisible(true); }, 400);
-                setTimeout(() => {
-                    setVisible(false);
-                    setTimeout(() => {
-                        const pool = PEEK_POSITIONS;
-                        setPeekPos(pool[Math.floor(Math.random() * pool.length)]);
-                        setVisible(true);
-                    }, 400);
-                }, 3400);
-            }
-        }, 18000);
-        return () => clearInterval(iv);
-    }, [chatOpen]);
-
-    useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const chatOpenRef = useRef(false);
+    useEffect(() => { chatOpenRef.current = chatOpen; }, [chatOpen]);
+    useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading]);
 
     const sendMessage = async () => {
-        if (!input.trim()) return;
+        if (!input.trim() || isLoading) return;
         const txt = input.trim(); setInput("");
         setMessages(p => [...p, { sender: "user", text: txt }]);
         setIsLoading(true);
         try {
             const res = await fetch(`${API_BASE}/api/bots/chat`, {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ message: txt, bot_id: MASCOT_BOT_ID, session_id: sessionId.current, history: messages.map(m => ({ sender: m.sender, text: m.text })) }),
+                body: JSON.stringify({ message: txt, bot_id: BOT_ID, session_id: sessionId.current, history: messages.map(m => ({ sender: m.sender, text: m.text })) }),
             });
             const d = await res.json();
-            setMessages(p => [...p, { sender: "bot", text: d.reply || "Hmm... 🤔" }]);
+            setMessages(p => [...p, { sender: "bot", text: d.reply ?? "Hmm... 🤔" }]);
         } catch { setMessages(p => [...p, { sender: "bot", text: "Brain glitch! 🤕 Try again." }]); }
         finally { setIsLoading(false); }
     };
 
-    const cfg = CONFIGS[peekPos];
-    const isRunning = peekPos.startsWith("run");
+    // Convert screen → world coordinates using the same unit as Three.js view
+    function screenToWorld(sx: number, sy: number) {
+        const unit = 110;
+        const x = (sx / window.innerWidth - 0.5) * (window.innerWidth / unit);
+        const y = -(sy / window.innerHeight - 0.5) * (window.innerHeight / unit);
+        return { x, y };
+    }
+
+    // Global pointer events to track drag across the whole document
+    useEffect(() => {
+        const onMove = (e: PointerEvent) => {
+            if (!drag.active) return;
+            const now = performance.now() / 1000;
+            const dt = Math.max(now - drag.prevT, 0.008);
+            const wp = screenToWorld(e.clientX, e.clientY);
+            drag.velY = (wp.y - drag.prevY) / dt;
+            drag.prevY = wp.y; drag.prevT = now;
+            drag.worldX = wp.x; drag.worldY = wp.y;
+        };
+        const onUp = () => {
+            if (!drag.active) return;
+            drag.active = false;
+            setIsDragging(false);
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        return () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
+    }, []);
+
+    // Three.js mascot
+    useEffect(() => {
+        const canvas = canvasRef.current; if (!canvas) return;
+        let reqId = 0; let renderer: THREE.WebGLRenderer;
+
+        const init = () => {
+            const COL = { bodyDark: 0x0e0f1a, bodyMid: 0x151826, accent: 0x00eaff, accent2: 0x7a3dff, hot: 0x9fffff };
+
+            renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.outputColorSpace = THREE.SRGBColorSpace;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.15;
+
+            const scene = new THREE.Scene();
+            let view = computeView();
+            const cam = new THREE.OrthographicCamera(view.left, view.right, view.top, view.bottom, -100, 100);
+            cam.position.set(0, 0, 10); cam.lookAt(0, 0, 0);
+
+            function computeView() {
+                const w = window.innerWidth, h = window.innerHeight, u = 110;
+                return { left: -w/2/u, right: w/2/u, top: h/2/u, bottom: -h/2/u };
+            }
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+            const key = new THREE.DirectionalLight(0xcfe0ff, 0.8); key.position.set(3, 5, 4); scene.add(key);
+            const fill1 = new THREE.DirectionalLight(COL.accent, 0.55); fill1.position.set(-4, 1, 2); scene.add(fill1);
+            const fill2 = new THREE.DirectionalLight(COL.accent2, 0.45); fill2.position.set(4, -1, 3); scene.add(fill2);
+
+            // ── Build rig ──
+            const mascot = new THREE.Group(); mascot.scale.setScalar(0.35); scene.add(mascot);
+            const body = new THREE.Group(); mascot.add(body);
+            const pelvis = new THREE.Group(); body.add(pelvis); pelvis.position.y = 0.62;
+            const torso = new THREE.Group(); pelvis.add(torso);
+            const chest = new THREE.Group(); torso.add(chest); chest.position.y = 0.35;
+            const neck = new THREE.Group(); chest.add(neck); neck.position.y = 0.35;
+            const head = new THREE.Group(); neck.add(head); head.position.y = 0.32;
+
+            const torsoMat = new THREE.MeshStandardMaterial({ color: COL.bodyDark, roughness: 0.45, metalness: 0.2, emissive: new THREE.Color(0x020412), emissiveIntensity: 1.0 });
+            const tGeo = new THREE.SphereGeometry(0.55, 48, 48); tGeo.scale(1, 1.15, 0.9);
+            torso.add(new THREE.Mesh(tGeo, torsoMat));
+
+            const bGeo = new THREE.SphereGeometry(0.58, 48, 48, 0, Math.PI*2, Math.PI*0.55, Math.PI*0.45); bGeo.scale(1, 1.15, 0.9);
+            const bellyMat = new THREE.MeshBasicMaterial({ map: gradientTex(256, 256, [[0,'rgba(0,234,255,0.95)'],[0.55,'rgba(122,61,255,0.9)'],[1,'rgba(60,10,120,0)']]), transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
+            torso.add(new THREE.Mesh(bGeo, bellyMat));
+
+            const shMat = new THREE.MeshStandardMaterial({ color: COL.bodyMid, roughness: 0.5, metalness: 0.3 });
+            const shL = new THREE.Mesh(new THREE.SphereGeometry(0.14, 24, 24), shMat); shL.position.set(-0.55, 0.55, 0.05); torso.add(shL);
+            const shR = shL.clone(); shR.position.set(0.55, 0.55, 0.05); torso.add(shR);
+
+            const ground = new THREE.Sprite(new THREE.SpriteMaterial({ map: radialTex(256,'rgba(0,234,255,0.8)','rgba(0,234,255,0)'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+            ground.scale.set(2.6, 1.2, 1); mascot.add(ground);
+
+            // Head
+            head.add(new THREE.Mesh(rBox(1.35,1.08,0.9,0.26), new THREE.MeshStandardMaterial({ color:0x101321, roughness:0.35, metalness:0.45, emissive:new THREE.Color(0x000a14), emissiveIntensity:0.4 })));
+            const bezel = new THREE.Mesh(rPlane(1.08,0.85,0.14), new THREE.MeshStandardMaterial({ color:0x1a2030, roughness:0.3, metalness:0.6, emissive:new THREE.Color(0x001525), emissiveIntensity:0.5 }));
+            bezel.position.z = 0.455; head.add(bezel);
+            const screen = new THREE.Mesh(rPlane(1,0.78,0.12), new THREE.MeshStandardMaterial({ color:0x03050d, roughness:0.15, emissive:new THREE.Color(0x03080f), emissiveIntensity:1 }));
+            screen.position.z = 0.47; head.add(screen);
+            const mxTex = matrixTex(256,192);
+            const mxMat = new THREE.MeshBasicMaterial({ map:mxTex, transparent:true, opacity:0.55 });
+            const mxPlane = new THREE.Mesh(rPlane(0.98,0.76,0.11), mxMat); mxPlane.position.z = 0.475; head.add(mxPlane);
+
+            function makeEye() {
+                const root = new THREE.Group();
+                const mat = new THREE.MeshStandardMaterial({ color:COL.hot, emissive:new THREE.Color(COL.accent), emissiveIntensity:3, roughness:0.25 });
+                const d = new THREE.Mesh(new THREE.OctahedronGeometry(0.15,0), mat);
+                d.geometry.scale(1,1,0.35); d.rotation.z = Math.PI/4; d.userData.mat = mat; root.add(d);
+                const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map:radialTex(128,'rgba(0,234,255,0.9)','rgba(0,234,255,0)'), transparent:true, blending:THREE.AdditiveBlending, depthWrite:false }));
+                spr.scale.setScalar(0.75); spr.position.z = 0.02; root.add(spr);
+                return { root, diamond: d, mat };
+            }
+            const eyeL = makeEye(), eyeR = makeEye();
+            eyeL.root.position.set(-0.22, 0.02, 0.485); eyeR.root.position.set(0.22, 0.02, 0.485);
+            head.add(eyeL.root, eyeR.root);
+            const eyeHomeL = eyeL.root.position.clone(), eyeHomeR = eyeR.root.position.clone();
+
+            // Confusion stars
+            const confGroup = new THREE.Group(); confGroup.visible = false; head.add(confGroup);
+            const starMat = new THREE.MeshBasicMaterial({ color: COL.accent, transparent: true, opacity: 0.9 });
+            for (let i = 0; i < 4; i++) {
+                const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.07, 0), starMat.clone());
+                confGroup.add(star);
+            }
+
+            // Antennae
+            const antMat = new THREE.MeshStandardMaterial({ color:COL.accent, emissive:COL.accent, emissiveIntensity:0.8, roughness:0.3, metalness:0.4 });
+            function makeAnt(side: number) {
+                const g = new THREE.Group();
+                const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.06,0.3,14), antMat); stem.position.y=0.15; stem.rotation.z=side*0.35;
+                const tip = new THREE.Mesh(new THREE.SphereGeometry(0.1,18,18), antMat); tip.position.set(side*0.12,0.32,0);
+                g.add(stem,tip); return g;
+            }
+            const antL = makeAnt(-1); antL.position.set(-0.55,0.55,0); head.add(antL);
+            const antR = makeAnt(1); antR.position.set(0.55,0.55,0); head.add(antR);
+            const asLX=new Spr(0,2.2,0.6),asLZ=new Spr(0,2.5,0.55),asRX=new Spr(0,2.2,0.6),asRZ=new Spr(0,2.5,0.55);
+            let pYaw=0,pPitch=0;
+
+            // Limbs
+            const limbMat = new THREE.MeshStandardMaterial({ color:COL.bodyDark, roughness:0.5, metalness:0.2, emissive:new THREE.Color(0x00070f), emissiveIntensity:0.4 });
+            function makeArm(side: number) {
+                const sh = new THREE.Group(); sh.position.set(side*0.55,0.55,0.08); torso.add(sh);
+                const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.085,0.32,8,14),limbMat); upper.position.y=-0.16; sh.add(upper);
+                const el = new THREE.Group(); el.position.y=-0.32; sh.add(el);
+                const lower = new THREE.Mesh(new THREE.CapsuleGeometry(0.075,0.28,8,14),limbMat); lower.position.y=-0.14; el.add(lower);
+                const hand = new THREE.Mesh(new THREE.SphereGeometry(0.11,20,20),limbMat); hand.position.y=-0.28; el.add(hand);
+                return { sh, el };
+            }
+            const armL=makeArm(-1), armR=makeArm(1);
+
+            function makeLeg(side: number) {
+                const hip = new THREE.Group(); hip.position.set(side*0.2,-0.05,0); pelvis.add(hip);
+                hip.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.11,0.32,8,16),limbMat));
+                const kn = new THREE.Group(); kn.position.y=-0.32; hip.add(kn);
+                kn.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.095,0.30,8,16),limbMat));
+                const ank = new THREE.Group(); ank.position.y=-0.30; kn.add(ank);
+                const fg=new THREE.SphereGeometry(0.17,24,24); fg.scale(1,0.5,1.55);
+                ank.add(new THREE.Mesh(fg, new THREE.MeshStandardMaterial({color:0x0a0c14,roughness:0.5,metalness:0.25})));
+                const sole = new THREE.Sprite(new THREE.SpriteMaterial({ map:radialTex(128,'rgba(0,234,255,0.8)','rgba(0,234,255,0)'), transparent:true, depthWrite:false, blending:THREE.AdditiveBlending }));
+                sole.scale.set(0.7,0.35,1); sole.position.y=-0.46; ank.add(sole);
+                return { hip, kn, ank, sole };
+            }
+            const legL=makeLeg(-1), legR=makeLeg(1);
+
+            // Geometry helpers
+            function rBox(w:number,h:number,d:number,r:number) {
+                const g=new THREE.BoxGeometry(w,h,d,6,6,6), pos=g.attributes.position, v=new THREE.Vector3();
+                for(let i=0;i<pos.count;i++){
+                    v.fromBufferAttribute(pos,i);
+                    const cx=THREE.MathUtils.clamp(v.x,-w/2+r,w/2-r),cy=THREE.MathUtils.clamp(v.y,-h/2+r,h/2-r),cz=THREE.MathUtils.clamp(v.z,-d/2+r,d/2-r);
+                    const dx=v.x-cx,dy=v.y-cy,dz2=v.z-cz,l=Math.sqrt(dx*dx+dy*dy+dz2*dz2);
+                    if(l>0){v.set(cx+dx/l*r,cy+dy/l*r,cz+dz2/l*r);pos.setXYZ(i,v.x,v.y,v.z);}
+                } g.computeVertexNormals(); return g;
+            }
+            function rPlane(w:number,h:number,r:number) {
+                const s=new THREE.Shape(),hw=w/2,hh=h/2;
+                s.moveTo(-hw+r,-hh);s.lineTo(hw-r,-hh);s.quadraticCurveTo(hw,-hh,hw,-hh+r);
+                s.lineTo(hw,hh-r);s.quadraticCurveTo(hw,hh,hw-r,hh);
+                s.lineTo(-hw+r,hh);s.quadraticCurveTo(-hw,hh,-hw,hh-r);
+                s.lineTo(-hw,-hh+r);s.quadraticCurveTo(-hw,-hh,-hw+r,-hh);
+                return new THREE.ShapeGeometry(s,16);
+            }
+            function radialTex(size:number,inner:string,outer:string) {
+                const c=document.createElement('canvas');c.width=c.height=size;
+                const ctx=c.getContext('2d')!,g=ctx.createRadialGradient(size/2,size/2,0,size/2,size/2,size/2);
+                g.addColorStop(0,inner);g.addColorStop(1,outer);ctx.fillStyle=g;ctx.fillRect(0,0,size,size);
+                return new THREE.CanvasTexture(c);
+            }
+            function gradientTex(w:number,h:number,stops:any[]) {
+                const c=document.createElement('canvas');c.width=w;c.height=h;
+                const ctx=c.getContext('2d')!,g=ctx.createRadialGradient(w/2,h*0.15,0,w/2,h*0.5,h*0.9);
+                stops.forEach(s=>g.addColorStop(s[0],s[1]));ctx.fillStyle=g;ctx.fillRect(0,0,w,h);
+                return new THREE.CanvasTexture(c);
+            }
+            function matrixTex(w:number,h:number) {
+                const c=document.createElement('canvas');c.width=w;c.height=h;
+                const ctx=c.getContext('2d')!;ctx.fillStyle='#000';ctx.fillRect(0,0,w,h);ctx.font='10px monospace';
+                for(let i=0;i<480;i++){const a=Math.random()*0.55+0.1,g=200+(Math.random()*55|0);ctx.fillStyle=`rgba(0,${g},${g},${a})`;ctx.fillText(String.fromCharCode(33+Math.floor(Math.random()*90)),Math.random()*w,Math.random()*h);}
+                const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;return t;
+            }
+
+            // ── Agent ──
+            const WALK='walk',CLIMB='climb',PEEK='peek',IDLE='idle',FALL='fall',CONFUSED='confused';
+            const a = {
+                state: WALK as string, stateTime: 0,
+                pos: new THREE.Vector2(0,0), facing: 1,
+                velY: 0,
+                targetX: 0,
+                climbSide: 1, climbTargetY: 0, climbDir: 1,
+                peekSide: 1, peekPhase: 0, walkPhase: 0,
+                sx: new Spr(0,0.4,1), sy: new Spr(0,0.5,1),
+                sTiltZ: new Spr(0,1,1), sTurn: new Spr(0,0.8,1),
+                sBob: new Spr(0,2.5,1), sSquash: new Spr(0,3,1),
+                wasInDrag: false,
+                dragVelX: 0,   // smoothed drag velocity X for inertia
+                dragVelY: 0,   // smoothed drag velocity Y for inertia
+                stretchY: new Spr(1,5,0.65), 
+                stretchX: new Spr(1,5,0.65),
+            };
+
+            const mouse = { x:0, y:0, has:false };
+            const onMM = (e:MouseEvent) => {
+                const u=110; mouse.x=(e.clientX/window.innerWidth-0.5)*(window.innerWidth/u); mouse.y=-(e.clientY/window.innerHeight-0.5)*(window.innerHeight/u); mouse.has=true;
+            };
+            window.addEventListener('mousemove',onMM);
+
+            function enterWalk() { a.state=WALK; a.stateTime=0; a.targetX=THREE.MathUtils.randFloat(view.left+1.2,view.right-1.2); }
+            function enterClimb() {
+                a.state=CLIMB; a.stateTime=0; a.climbSide=Math.random()<.5?-1:1;
+                a.sx.tgt=a.climbSide*(Math.abs(view.right)-0.8); a.climbDir=1;
+                a.climbTargetY=THREE.MathUtils.randFloat(1.4,Math.abs(view.top)-1.2); a.facing=a.climbSide;
+            }
+            function enterPeek() {
+                a.state=PEEK; a.stateTime=0; a.peekSide=Math.random()<.5?-1:1; a.peekPhase=0;
+                const ay=THREE.MathUtils.randFloat(0.5,Math.abs(view.top)-1.2);
+                a.sx.set(a.peekSide*(Math.abs(view.right)+1)); a.sy.set(ay); a.pos.y=ay; a.facing=-a.peekSide;
+            }
+            function pickNext() {
+                const r=Math.random();
+                if(r<0.45)enterWalk();else if(r<0.75)enterClimb();else if(r<0.92)enterPeek();
+                else{a.state=IDLE;a.stateTime=0;}
+            }
+            a.sx.set(0);a.sy.set(0);enterWalk();
+
+            const damp=(cur:number,tgt:number,rate:number,dt:number)=>cur+(tgt-cur)*(1-Math.exp(-rate*dt));
+
+            // Hit-area update
+            let fc=0;
+            function updateHit() {
+                const w=window.innerWidth,h=window.innerHeight;
+                const ndcX=(mascot.position.x-view.left)/(view.right-view.left)*2-1;
+                const ndcY=(mascot.position.y-view.bottom)/(view.top-view.bottom)*2-1;
+                const sx=(ndcX+1)/2*w, sy=(1-(ndcY+1)/2)*h;
+                const pu=w/(view.right-view.left);
+                const hw=mascot.scale.x*1.6*pu, hh=mascot.scale.y*2.8*pu;
+                setHitArea({x:sx-hw,y:sy-hh,w:hw*2,h:hh*2});
+            }
+
+            const clock=new THREE.Clock();
+            let elapsed=0;
+            const _v=new THREE.Vector3();
+
+            function animate() {
+                const dt=Math.min(clock.getDelta(),0.05);
+                elapsed+=dt; a.stateTime+=dt;
+                const floorY=view.bottom+0.15;
+
+                // ── Detect drag state from shared `drag` object ──
+                if(drag.active) {
+                    if(!a.wasInDrag) { a.wasInDrag=true; confGroup.visible=false; a.dragVelX=0; a.dragVelY=0; }
+                    a.state='drag';
+
+                    // Smooth position follows pointer with slight spring lag (feels like grabbed scruff)
+                    const lerpRate = 1 - Math.exp(-22 * dt);
+                    mascot.position.x += (drag.worldX - mascot.position.x) * lerpRate;
+                    mascot.position.y += (drag.worldY - mascot.position.y) * lerpRate;
+                    a.sx.set(mascot.position.x);
+                    a.sy.set(mascot.position.y - floorY);
+                    a.pos.y = mascot.position.y;
+
+                    // Track smoothed drag velocity for inertia
+                    const rawVX = (drag.worldX - (mascot.position.x - (drag.worldX - mascot.position.x))) / Math.max(dt, 0.01);
+                    const rawVY = drag.velY;
+                    a.dragVelX = a.dragVelX + (rawVX - a.dragVelX) * (1 - Math.exp(-12 * dt));
+                    a.dragVelY = a.dragVelY + (rawVY - a.dragVelY) * (1 - Math.exp(-12 * dt));
+
+                    const speed = Math.sqrt(a.dragVelX*a.dragVelX + a.dragVelY*a.dragVelY);
+                    const maxSpd = 8;
+
+                    // No torso stretching — keep normal scale
+                    torso.scale.set(1, 1, 1);
+                    pelvis.position.y = 0.62;
+
+                    // Body tilts in direction of motion (lean into the dart)
+                    const tiltZ = THREE.MathUtils.clamp(-a.dragVelX / maxSpd * 0.55, -0.55, 0.55);
+                    const tiltX = THREE.MathUtils.clamp(-a.dragVelY / maxSpd * 0.35, -0.35, 0.35);
+                    body.rotation.z = damp(body.rotation.z, tiltZ, 12, dt);
+                    body.rotation.x = damp(body.rotation.x, tiltX, 12, dt);
+                    body.rotation.y = 0;
+                    body.position.y = 0;
+
+                    // Head leans forward into movement direction
+                    neck.rotation.y = damp(neck.rotation.y, THREE.MathUtils.clamp(a.dragVelX / maxSpd * 0.4, -0.4, 0.4), 10, dt);
+                    neck.rotation.x = damp(neck.rotation.x, THREE.MathUtils.clamp(a.dragVelY / maxSpd * 0.25, -0.25, 0.25), 10, dt);
+
+                    // Legs trail behind movement (opposite to velocity)
+                    const legTrail = THREE.MathUtils.clamp(a.dragVelY / maxSpd * 0.7, -0.7, 0.7);
+                    const legSwing = Math.sin(elapsed * 8) * 0.18 * Math.min(speed / 2, 1);
+                    legL.hip.rotation.x = damp(legL.hip.rotation.x, legTrail + legSwing, 10, dt);
+                    legR.hip.rotation.x = damp(legR.hip.rotation.x, legTrail - legSwing, 10, dt);
+                    legL.kn.rotation.x = damp(legL.kn.rotation.x, -Math.abs(legTrail) * 0.6 - 0.2, 10, dt);
+                    legR.kn.rotation.x = damp(legR.kn.rotation.x, -Math.abs(legTrail) * 0.6 - 0.2, 10, dt);
+
+                    // Arms spread out for balance, trail opposite to X motion
+                    const armTrailX = THREE.MathUtils.clamp(-a.dragVelX / maxSpd * 0.5, -0.5, 0.5);
+                    const armSpread = 0.55 + Math.min(speed / maxSpd, 1) * 0.35;
+                    armL.sh.rotation.x = damp(armL.sh.rotation.x, -armSpread + armTrailX, 10, dt);
+                    armR.sh.rotation.x = damp(armR.sh.rotation.x, -armSpread - armTrailX, 10, dt);
+                    armL.sh.rotation.z = damp(armL.sh.rotation.z, 0.65 + Math.sin(elapsed*6)*0.1, 10, dt);
+                    armR.sh.rotation.z = damp(armR.sh.rotation.z, -0.65 - Math.sin(elapsed*6)*0.1, 10, dt);
+                    armL.el.rotation.x = damp(armL.el.rotation.x, 0.3, 10, dt);
+                    armR.el.rotation.x = damp(armR.el.rotation.x, 0.3, 10, dt);
+
+                    // Eyes wide open in direction of travel
+                    const eyeShiftX = THREE.MathUtils.clamp(a.dragVelX / maxSpd * 0.15, -0.15, 0.15);
+                    eyeL.root.position.lerp(new THREE.Vector3(eyeHomeL.x + eyeShiftX, eyeHomeL.y + 0.04, eyeHomeL.z), 1 - Math.exp(-12*dt));
+                    eyeR.root.position.lerp(new THREE.Vector3(eyeHomeR.x + eyeShiftX, eyeHomeR.y + 0.04, eyeHomeR.z), 1 - Math.exp(-12*dt));
+                    eyeL.diamond.scale.y = eyeR.diamond.scale.y = 1.1; // wide
+                    eyeL.mat.emissiveIntensity = 4 + Math.sin(elapsed * 10) * 1;
+                    eyeR.mat.emissiveIntensity = 4 + Math.sin(elapsed * 10 + 1) * 1;
+
+                } else {
+                    // Drag just ended — launch into FALL if meaningfully above floor
+                    if(a.wasInDrag) {
+                        a.wasInDrag = false;
+                        // Reset body orientation
+                        body.rotation.x = 0;
+                        if(mascot.position.y > floorY + 0.6) {
+                            a.state = FALL;
+                            a.velY = Math.min(drag.velY, 3);
+                            a.stateTime = 0;
+                            a.pos.set(mascot.position.x, mascot.position.y);
+                            a.sx.set(mascot.position.x);
+                        } else {
+                            a.pos.y = 0; a.sy.set(0);
+                            enterWalk();
+                        }
+                        torso.scale.set(1, 1, 1);
+                        pelvis.position.y = 0.62;
+                    }
+
+                    // ── FALL ──
+                    if(a.state===FALL) {
+                        const GRAVITY=-16;
+                        a.velY += GRAVITY*dt;
+                        a.pos.y += a.velY*dt;
+                        mascot.position.x=a.sx.step(dt);
+                        mascot.position.y=a.pos.y;
+
+                        if(a.pos.y<=floorY){
+                            a.pos.y=floorY; a.velY=0;
+                            a.state=CONFUSED; a.stateTime=0;
+                            a.sx.set(mascot.position.x); a.sy.set(0);
+                        }
+
+                        // Squash on Y while airborne
+                        const fv=THREE.MathUtils.clamp(1-Math.abs(a.velY)*0.05,0.5,1.1);
+                        torso.scale.set(1/fv,fv,1/fv);
+                        body.rotation.y=0; body.rotation.z=0; body.position.y=0;
+
+                        // Legs fly up
+                        legL.hip.rotation.x=damp(legL.hip.rotation.x,-0.8,10,dt);
+                        legR.hip.rotation.x=damp(legR.hip.rotation.x,-0.8,10,dt);
+                        legL.kn.rotation.x=damp(legL.kn.rotation.x,-0.5,10,dt);
+                        legR.kn.rotation.x=damp(legR.kn.rotation.x,-0.5,10,dt);
+                        armL.sh.rotation.x=damp(armL.sh.rotation.x,-1.5,10,dt);
+                        armR.sh.rotation.x=damp(armR.sh.rotation.x,-1.5,10,dt);
+
+                    // ── CONFUSED ──
+                    } else if(a.state===CONFUSED) {
+                        mascot.position.x=a.sx.step(dt);
+                        mascot.position.y=floorY;
+
+                        // Bounce squash on impact (first 0.2s)
+                        const stamp=Math.min(a.stateTime/0.18,1);
+                        const sq=1-0.55*Math.sin(stamp*Math.PI);
+                        a.stretchY.tgt=sq; a.stretchX.tgt=1/Math.sqrt(Math.max(sq,0.1));
+                        a.stretchY.step(dt); a.stretchX.step(dt);
+                        torso.scale.set(a.stretchX.v,a.stretchY.v,a.stretchX.v);
+                        pelvis.position.y=damp(pelvis.position.y,0.62,8,dt);
+
+                        body.rotation.y=0;
+                        body.rotation.z=Math.sin(elapsed*2.5)*0.04;
+                        body.position.y=0;
+
+                        // Dizzy head spin
+                        head.rotation.z=Math.sin(elapsed*12)*0.22*Math.max(0,1-(a.stateTime/3));
+
+                        // Spinning confusion stars
+                        confGroup.visible=true;
+                        confGroup.children.forEach((star,i)=>{
+                            const ang=elapsed*5+(i/confGroup.children.length)*Math.PI*2;
+                            const r2=0.6+Math.sin(elapsed*3+i)*0.1;
+                            star.position.set(Math.cos(ang)*r2,0.85+Math.sin(ang*2)*0.15,Math.sin(ang)*0.15);
+                            star.rotation.x=elapsed*8; star.rotation.z=elapsed*6;
+                        });
+
+                        // Dazed semi-random eye wander
+                        eyeL.root.position.x=eyeHomeL.x+Math.sin(elapsed*7)*0.08;
+                        eyeR.root.position.x=eyeHomeR.x+Math.sin(elapsed*7+Math.PI)*0.08;
+                        eyeL.root.position.y=eyeHomeL.y+Math.cos(elapsed*5)*0.05;
+                        eyeR.root.position.y=eyeHomeR.y+Math.cos(elapsed*5+1)*0.05;
+                        eyeL.diamond.scale.y=eyeR.diamond.scale.y=0.6+Math.sin(elapsed*9)*0.3;
+                        eyeL.mat.emissiveIntensity=eyeR.mat.emissiveIntensity=2;
+
+                        if(a.stateTime>3.0){
+                            confGroup.visible=false;
+                            head.rotation.z=0;
+                            eyeL.root.position.copy(eyeHomeL); eyeR.root.position.copy(eyeHomeR);
+                            enterWalk();
+                        }
+
+                    // ── NORMAL AI states ──
+                    } else {
+                        confGroup.visible=false;
+                        a.stretchY.tgt=1; a.stretchX.tgt=1;
+                        a.stretchY.step(dt); a.stretchX.step(dt);
+                        pelvis.position.y=damp(pelvis.position.y,0.62,8,dt);
+
+                        if(a.state===WALK){
+                            a.sx.tgt=a.targetX; a.sy.tgt=0;
+                            const dir=Math.sign(a.targetX-a.sx.v);
+                            if(Math.abs(a.targetX-a.sx.v)>0.04)a.facing=dir;
+                            a.sTurn.tgt=a.facing>0?0.35:-0.35; a.sTiltZ.tgt=-a.facing*0.04;
+                            if(Math.abs(a.sx.v-a.targetX)<0.05&&Math.abs(a.sx.vel)<0.15)pickNext();
+                        } else if(a.state===CLIMB){
+                            a.sx.tgt=a.climbSide*(Math.abs(view.right)-0.75);
+                            a.pos.y+=0.12*dt*a.climbDir; a.sy.tgt=a.pos.y;
+                            if(a.climbDir>0&&a.pos.y>=a.climbTargetY){a.climbDir=-1;a.stateTime=0;}
+                            if(a.climbDir<0&&a.pos.y<=0.02){a.pos.y=0;enterWalk();}
+                            a.sTiltZ.tgt=a.climbSide*0.12; a.sTurn.tgt=a.climbSide*1.35;
+                        } else if(a.state===PEEK){
+                            if(a.peekPhase===0){a.sx.tgt=a.peekSide*(Math.abs(view.right)-0.85);if(a.stateTime>0.9){a.peekPhase=1;a.stateTime=0;}}
+                            else if(a.peekPhase===1){if(a.stateTime>2.4){a.peekPhase=2;a.stateTime=0;}}
+                            else{a.sx.tgt=a.peekSide*(Math.abs(view.right)+1);if(a.stateTime>0.9){a.pos.y=0;a.sy.set(0);a.sx.set(THREE.MathUtils.clamp(a.sx.v,view.left+1,view.right-1));enterWalk();}}
+                            a.sTurn.tgt=-a.peekSide*0.4; a.sTiltZ.tgt=0;
+                        } else if(a.state===IDLE){
+                            a.sTurn.tgt=Math.sin(elapsed*0.9)*0.3; a.sTiltZ.tgt=0;
+                            if(a.stateTime>2.2)pickNext();
+                        }
+
+                        a.sx.step(dt);a.sy.step(dt);a.sTiltZ.step(dt);a.sTurn.step(dt);
+                        mascot.position.x=a.sx.v; mascot.position.y=floorY+a.sy.v;
+                        body.rotation.y=a.sTurn.v; body.rotation.z=a.sTiltZ.v;
+
+                        // Walk cycle
+                        const W=a.state===WALK,C=a.state===CLIMB;
+                        a.walkPhase+=dt*(W?(a.sx.vel||0.5)*4.6:C?3.8:1.6);
+                        const bob=(Math.abs(Math.sin(a.walkPhase)))*(W?0.07:C?0.04:0.02)-(W?0.035:C?0.02:0.01);
+                        a.sBob.tgt=bob; a.sBob.step(dt); body.position.y=a.sBob.v;
+                        const imp=Math.max(0,Math.sin(a.walkPhase))*(W?0.08:0);
+                        a.sSquash.tgt=imp; a.sSquash.step(dt);
+                        torso.scale.set(a.stretchX.v*(1+imp*0.5),a.stretchY.v*(1-imp*0.7),a.stretchX.v*(1+imp*0.3));
+
+                        // Legs
+                        const lr=W||C?14:8;
+                        const lp=a.walkPhase,rp=lp+Math.PI;
+                        const legT=(ph:number)=>({h:Math.sin(ph)*(W?0.55:C?0.4:0),k:-Math.max(0,Math.sin(ph))*(W?0.9:C?0.8:0),y:-0.05+Math.max(0,Math.sin(ph))*0.04});
+                        const lt=legT(lp),rt=legT(rp);
+                        legL.hip.rotation.x=damp(legL.hip.rotation.x,lt.h,lr,dt);legR.hip.rotation.x=damp(legR.hip.rotation.x,rt.h,lr,dt);
+                        legL.kn.rotation.x=damp(legL.kn.rotation.x,lt.k,lr,dt);legR.kn.rotation.x=damp(legR.kn.rotation.x,rt.k,lr,dt);
+                        legL.hip.position.y=damp(legL.hip.position.y,lt.y,lr,dt);legR.hip.position.y=damp(legR.hip.position.y,rt.y,lr,dt);
+                        const sOn=a.state!==PEEK&&a.pos.y<0.3?1:0;
+                        legL.sole.material.opacity=damp(legL.sole.material.opacity,sOn,6,dt);
+                        legR.sole.material.opacity=damp(legR.sole.material.opacity,sOn,6,dt);
+
+                        // Arms
+                        const sw=Math.sin(a.walkPhase),ar=W||C?12:6;
+                        armL.sh.rotation.x=damp(armL.sh.rotation.x,W?-sw*0.55:C?-2+sw*0.4:0,ar,dt);
+                        armR.sh.rotation.x=damp(armR.sh.rotation.x,W?sw*0.55:C?-2-sw*0.4:0,ar,dt);
+                        armL.sh.rotation.z=damp(armL.sh.rotation.z,C?0.4:0.12,ar,dt);
+                        armR.sh.rotation.z=damp(armR.sh.rotation.z,C?-0.4:-0.12,ar,dt);
+                        armL.el.rotation.x=damp(armL.el.rotation.x,W?0.15+Math.max(0,-sw)*0.4:0.25,ar,dt);
+                        armR.el.rotation.x=damp(armR.el.rotation.x,W?0.15+Math.max(0,sw)*0.4:0.25,ar,dt);
+
+                        // Head gaze
+                        const gz=mouse.has?new THREE.Vector3(mouse.x,mouse.y,0):new THREE.Vector3(mascot.position.x+a.facing,mascot.position.y+1.5,0);
+                        const hw2=new THREE.Vector3(); head.getWorldPosition(hw2);
+                        const tg=_v.copy(gz).sub(hw2);
+                        neck.rotation.y=damp(neck.rotation.y,THREE.MathUtils.clamp(Math.atan2(tg.x,1.5),-0.55,0.55)-body.rotation.y,6,dt);
+                        neck.rotation.x=damp(neck.rotation.x,THREE.MathUtils.clamp(-Math.atan2(tg.y,1.5),-0.35,0.35),6,dt);
+                        const gx=THREE.MathUtils.clamp(_v.copy(gz).sub(hw2).x/2,-1,1),gy=THREE.MathUtils.clamp(_v.y/2,-1,1);
+                        eyeL.root.position.lerp(new THREE.Vector3(eyeHomeL.x+gx*0.11,eyeHomeL.y+gy*0.07,eyeHomeL.z),1-Math.exp(-10*dt));
+                        eyeR.root.position.lerp(new THREE.Vector3(eyeHomeR.x+gx*0.11,eyeHomeR.y+gy*0.07,eyeHomeR.z),1-Math.exp(-10*dt));
+                        const pulse=2.6+Math.sin(elapsed*2.2)*0.55;
+                        eyeL.mat.emissiveIntensity=pulse; eyeR.mat.emissiveIntensity=pulse;
+                        const blT=elapsed%4;
+                        const bl=blT>3.82?1-Math.abs(Math.sin((blT-3.82)/0.18*Math.PI)):1;
+                        eyeL.diamond.scale.y=eyeR.diamond.scale.y=Math.max(0.08,bl);
+
+                        // Antennae
+                        const yv=(neck.rotation.y-pYaw)/Math.max(dt,0.0001),pv=(neck.rotation.x-pPitch)/Math.max(dt,0.0001);
+                        pYaw=neck.rotation.y; pPitch=neck.rotation.x;
+                        asLX.vel+=pv*0.9; asRX.vel+=pv*0.9; asLZ.vel+=yv*0.7; asRZ.vel+=-yv*0.7;
+                        asLX.step(dt);asRX.step(dt);asLZ.step(dt);asRZ.step(dt);
+                        antL.rotation.x=asLX.v*0.7; antR.rotation.x=asRX.v*0.7;
+                        antL.rotation.z=asLZ.v*0.8+Math.sin(elapsed*2.4)*0.05;
+                        antR.rotation.z=asRZ.v*0.8+Math.sin(elapsed*2.4+0.6)*-0.05;
+                    }
+                }
+
+                // Always-on effects
+                if(mxMat.map){mxMat.map.offset.y=(elapsed*0.14)%1; mxMat.map.offset.x=Math.sin(elapsed*0.3)*0.02;}
+                bellyMat.opacity=0.8+Math.sin(elapsed*1.4)*0.15;
+                const gOn=(a.pos.y<0.1&&!drag.active&&a.state!==PEEK)?1:0;
+                ground.material.opacity=damp(ground.material.opacity,(0.55+Math.sin(elapsed*1.4+0.5)*0.22)*gOn,5,dt);
+                ground.position.y=0.1;
+
+                renderer.render(scene,cam);
+                fc++; if(fc%6===0)updateHit();
+                reqId=requestAnimationFrame(animate);
+            }
+            animate();
+
+            const onRes=()=>{
+                renderer.setSize(window.innerWidth,window.innerHeight);
+                view=computeView();
+                cam.left=view.left;cam.right=view.right;cam.top=view.top;cam.bottom=view.bottom;
+                cam.updateProjectionMatrix();
+            };
+            window.addEventListener('resize',onRes);
+
+            return ()=>{
+                cancelAnimationFrame(reqId);
+                renderer.dispose();
+                window.removeEventListener('resize',onRes);
+                window.removeEventListener('mousemove',onMM);
+            };
+        };
+
+        try { return init(); } catch(e){console.error('Mascot init failed',e);}
+    },[]);
+
+    const handlePointerDown=(e:React.PointerEvent)=>{
+        if(chatOpenRef.current) return;
+        e.preventDefault(); e.stopPropagation();
+        const u=110;
+        const wx=(e.clientX/window.innerWidth-0.5)*(window.innerWidth/u);
+        const wy=-(e.clientY/window.innerHeight-0.5)*(window.innerHeight/u);
+        drag.active=true; drag.worldX=wx; drag.worldY=wy;
+        drag.startWorldY=wy; drag.velY=0; drag.prevY=wy; drag.prevT=performance.now()/1000;
+        setIsDragging(true);
+    };
 
     return (
         <>
-            {/* ── Mascot ── */}
-            <AnimatePresence mode="wait">
-                {!chatOpen && visible && (
-                    <motion.div
-                        key={peekPos}
-                        className={`fixed ${cfg.posClass} z-[999] cursor-pointer select-none`}
-                        style={{ willChange: "transform" }}
-                        initial={{ x: cfg.hiddenX, y: cfg.hiddenY, opacity: 0 }}
-                        animate={{ x: cfg.shownX, y: cfg.shownY, opacity: 1 }}
-                        exit={{ x: cfg.hiddenX, y: cfg.hiddenY, opacity: 0 }}
-                        transition={isRunning
-                            ? { duration: 2.8, ease: "linear", type: "tween" }
-                            : { type: "spring", stiffness: 140, damping: 16 }}
-                        onClick={() => { if (!isRunning) setChatOpen(true); }}
-                    >
-                        <div className="flex flex-col items-center relative">
-                            {/* Quip bubble – shown above/below depending on position */}
-                            {!isRunning && cfg.bubbleDir === "above" && (
-                                <AnimatePresence>
-                                    {showQuip && (
-                                        <motion.div
-                                            key={quipIdx}
-                                            initial={{ opacity: 0, y: 8, scale: 0.8 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }}
-                                            transition={{ duration: 0.2, type: "tween" }}
-                                            className="absolute bottom-[108px] left-1/2 -translate-x-1/2 whitespace-nowrap bg-white text-gray-900 text-[11px] font-semibold px-3.5 py-2 rounded-2xl shadow-xl"
-                                        >
-                                            {QUIPS[quipIdx]}
-                                            <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 border-l-[7px] border-r-[7px] border-t-[9px] border-l-transparent border-r-transparent border-t-white" />
-                                        </motion.div>
-                                    )}
-                                </AnimatePresence>
-                            )}
+            <canvas ref={canvasRef} className="fixed inset-0 w-full h-full z-[9000]" style={{pointerEvents:'none'}}/>
 
-                            {/* Quip bubble – below */}
-                            {!isRunning && cfg.bubbleDir === "below" && (
-                                <AnimatePresence>
-                                    {showQuip && (
-                                        <motion.div
-                                            key={quipIdx}
-                                            initial={{ opacity: 0, y: -8, scale: 0.8 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }}
-                                            transition={{ duration: 0.2, type: "tween" }}
-                                            className="absolute top-[108px] left-1/2 -translate-x-1/2 whitespace-nowrap bg-white text-gray-900 text-[11px] font-semibold px-3.5 py-2 rounded-2xl shadow-xl"
-                                        >
-                                            {QUIPS[quipIdx]}
-                                            <div className="absolute -top-2 left-1/2 -translate-x-1/2 border-l-[7px] border-r-[7px] border-b-[9px] border-l-transparent border-r-transparent border-b-white" />
-                                        </motion.div>
-                                    )}
-                                </AnimatePresence>
-                            )}
+            {!chatOpen && (
+                <div
+                    onPointerDown={handlePointerDown}
+                    onClick={()=>{ if(!isDragging) setChatOpen(true); }}
+                    title="Grab and throw me! Or click to chat 😄"
+                    style={{
+                        position:'fixed', left:hitArea.x, top:hitArea.y,
+                        width:hitArea.w, height:hitArea.h,
+                        cursor: isDragging ? 'grabbing' : 'grab',
+                        zIndex:9001, touchAction:'none', borderRadius:'50%',
+                    }}
+                />
+            )}
 
-                            {/* Quip bubble – right side */}
-                            {!isRunning && cfg.bubbleDir === "right" && (
-                                <AnimatePresence>
-                                    {showQuip && (
-                                        <motion.div
-                                            key={quipIdx}
-                                            initial={{ opacity: 0, x: -8, scale: 0.8 }} animate={{ opacity: 1, x: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }}
-                                            transition={{ duration: 0.2, type: "tween" }}
-                                            className="absolute left-[115px] top-1/2 -translate-y-1/2 whitespace-nowrap bg-white text-gray-900 text-[11px] font-semibold px-3.5 py-2 rounded-2xl shadow-xl"
-                                        >
-                                            {QUIPS[quipIdx]}
-                                            <div className="absolute left-[-9px] top-1/2 -translate-y-1/2 border-r-[9px] border-t-[7px] border-b-[7px] border-r-white border-t-transparent border-b-transparent" />
-                                        </motion.div>
-                                    )}
-                                </AnimatePresence>
-                            )}
-
-                            {/* Quip bubble – left side */}
-                            {!isRunning && cfg.bubbleDir === "left" && (
-                                <AnimatePresence>
-                                    {showQuip && (
-                                        <motion.div
-                                            key={quipIdx}
-                                            initial={{ opacity: 0, x: 8, scale: 0.8 }} animate={{ opacity: 1, x: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }}
-                                            transition={{ duration: 0.2, type: "tween" }}
-                                            className="absolute right-[115px] top-1/2 -translate-y-1/2 whitespace-nowrap bg-white text-gray-900 text-[11px] font-semibold px-3.5 py-2 rounded-2xl shadow-xl"
-                                        >
-                                            {QUIPS[quipIdx]}
-                                            <div className="absolute right-[-9px] top-1/2 -translate-y-1/2 border-l-[9px] border-t-[7px] border-b-[7px] border-l-white border-t-transparent border-b-transparent" />
-                                        </motion.div>
-                                    )}
-                                </AnimatePresence>
-                            )}
-
-                            {/* Rope for top hang */}
-                            {peekPos === "top" && (
-                                <div className="absolute -top-[120px] left-1/2 -translate-x-1/2 w-[1px] h-[130px] bg-gradient-to-t from-gray-400/50 via-gray-600/30 to-transparent z-[-1]">
-                                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-gray-400" />
-                                </div>
-                            )}
-
-                            {/* The creature itself */}
-                            <div className="relative">
-                                {isRunning && (
-                                    <div className="absolute top-1/2 -translate-y-1/2">
-                                        <DustTrail direction={peekPos === "run-left" ? "right" : "left"} />
-                                    </div>
-                                )}
-                                <motion.div
-                                    style={{ 
-                                        rotate: cfg.rotation, 
-                                        scaleX: cfg.flipX ? -1 : 1,
-                                        transformOrigin: peekPos === "top" ? "center -100px" : "center center" 
-                                    }}
-                                    animate={isRunning 
-                                        ? { y: [0, -12, 0, -12, 0] } 
-                                        : peekPos === "top"
-                                            ? { rotate: [-3, 3, -3], y: [0, 4, 0] }
-                                            : { y: [0, -5, 0] }
-                                    }
-                                    transition={{ repeat: Infinity, duration: isRunning ? 0.45 : 3.5, ease: "easeInOut", type: "tween" }}
-                                >
-                                    <CuteBlob mood={cfg.mood} size={isRunning ? 80 : 110} blinking={blinking} />
-                                </motion.div>
-                            </div>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* ── Chat widget ── */}
             <AnimatePresence>
-                {chatOpen && (
+                {chatOpen&&(
                     <motion.div
-                        initial={{ opacity: 0, scale: 0.82, y: 20 }}
+                        initial={{ opacity: 0, scale: 0.95, y: 40 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.82, y: 20 }}
-                        transition={{ type: "spring", stiffness: 320, damping: 26 }}
-                        className="fixed bottom-6 right-6 z-[1000] flex flex-col bg-[#0a0a12] border border-white/10 rounded-3xl shadow-2xl overflow-hidden w-[375px]"
-                        style={{ maxHeight: "88vh" }}
+                        exit={{ opacity: 0, scale: 0.95, y: 40 }}
+                        transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                        style={{
+                            position: 'fixed',
+                            bottom: '1.5rem',
+                            right: '1.5rem',
+                            width: 380,
+                            height: 'min(660px, 85vh)',
+                            zIndex: 99999,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            borderRadius: '1.5rem',
+                            boxShadow: '0 20px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.08)',
+                            background: '#0a0a0c',
+                            overflow: 'hidden'
+                        }}
                     >
                         {/* Header */}
-                        <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10 bg-gradient-to-r from-violet-900/50 to-purple-950/40">
-                            <div className="w-12 h-12 shrink-0">
-                                <CuteBlob mood="happy" size={48} blinking={false} />
+                        <div style={{
+                            flexShrink: 0,
+                            background: 'linear-gradient(180deg, #16161c 0%, #0d0d12 100%)',
+                            borderBottom: '1px solid rgba(255,255,255,0.06)',
+                            padding: '1rem 1.25rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.75rem',
+                            position: 'relative'
+                        }}>
+                            {/* Avatar */}
+                            <div style={{
+                                width: 42, height: 42,
+                                borderRadius: '50%',
+                                background: 'linear-gradient(135deg, rgba(198,244,50,0.1), rgba(100,220,255,0.1))',
+                                border: '1.5px solid rgba(198,244,50,0.3)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                flexShrink: 0,
+                                position: 'relative',
+                            }}>
+                                <Bot size={20} style={{ color: '#C6F432' }} />
+                                <span style={{
+                                    position: 'absolute', bottom: 1, right: 1,
+                                    width: 10, height: 10, borderRadius: '50%',
+                                    background: '#C6F432',
+                                    border: '2px solid #0d0d12',
+                                    boxShadow: '0 0 8px rgba(198,244,50,0.6)'
+                                }} />
                             </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="font-bold text-white text-sm">Redber</p>
-                                <div className="flex items-center gap-1.5">
-                                    <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-pulse" />
-                                    <span className="text-[10px] text-emerald-400 font-semibold uppercase tracking-widest">AI Assistant · Online</span>
+                            {/* Info */}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontWeight: 800, fontSize: '1rem', color: '#fff', lineHeight: 1.2 }}>Redber AI</div>
+                                <div style={{ fontSize: '0.65rem', fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    EXPERT ASSISTANT FOR ACENZOS
                                 </div>
                             </div>
-                            <button onClick={() => setChatOpen(false)} className="p-2 rounded-full text-gray-500 hover:text-white hover:bg-white/10 transition-colors">
-                                <X size={16} />
+                            {/* Close */}
+                            <button
+                                onClick={() => setChatOpen(false)}
+                                style={{
+                                    flexShrink: 0,
+                                    width: 32, height: 32,
+                                    borderRadius: '50%',
+                                    border: 'none',
+                                    background: 'rgba(255,255,255,0.05)',
+                                    color: 'rgba(255,255,255,0.6)',
+                                    cursor: 'pointer',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    transition: 'all 0.2s',
+                                }}
+                                onMouseOver={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#fff'; }}
+                                onMouseOut={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; }}
+                            >
+                                <X size={16} strokeWidth={2.5} />
                             </button>
                         </div>
 
-                        {/* Messages */}
-                        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 scrollbar-hide" style={{ maxHeight: 420 }}>
+                        {/* Messages Area */}
+                        <div style={{
+                            flex: 1,
+                            minHeight: 0,
+                            overflowY: 'auto',
+                            padding: '1.25rem',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '1rem',
+                        }}>
                             {messages.map((m, i) => (
-                                <div key={i} className={`flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
-                                    <div className={`max-w-[84%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${m.sender === "user"
-                                        ? "bg-violet-600 text-white rounded-tr-sm"
-                                        : "bg-white/6 border border-white/10 text-gray-100 rounded-tl-sm"}`}>
-                                        {m.text}
+                                <motion.div
+                                    initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
+                                    key={i}
+                                    style={{ display: 'flex', justifyContent: m.sender === 'user' ? 'flex-end' : 'flex-start', width: '100%' }}
+                                >
+                                    {m.sender === 'bot' && (
+                                        <div style={{
+                                            width: 28, height: 28, borderRadius: '50%',
+                                            background: 'rgba(198,244,50,0.1)',
+                                            border: '1px solid rgba(198,244,50,0.2)',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            flexShrink: 0, marginRight: 8, alignSelf: 'flex-end',
+                                        }}>
+                                            <Bot size={14} style={{ color: '#C6F432' }} />
+                                        </div>
+                                    )}
+                                    <div style={{
+                                        maxWidth: m.sender === 'bot' ? '80%' : '85%',
+                                        padding: '0.85rem 1rem',
+                                        borderRadius: m.sender === 'user' ? '1.2rem 1.2rem 0.25rem 1.2rem' : '1.2rem 1.2rem 1.2rem 0.25rem',
+                                        background: m.sender === 'user'
+                                            ? '#C6F432'
+                                            : 'rgba(255,255,255,0.05)',
+                                        border: m.sender === 'user' ? 'none' : '1px solid rgba(255,255,255,0.08)',
+                                        color: m.sender === 'user' ? '#0d0d0d' : '#e0e0e0',
+                                        fontSize: '0.9rem',
+                                        lineHeight: 1.5,
+                                        wordBreak: 'break-word',
+                                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                    }}>
+                                        {m.sender === 'user'
+                                            ? <p style={{ margin: 0, fontWeight: 600 }}>{m.text}</p>
+                                            : <div style={{ fontSize: '0.9rem', lineHeight: 1.6 }}><ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{m.text}</ReactMarkdown></div>
+                                        }
                                     </div>
-                                </div>
+                                </motion.div>
                             ))}
                             {isLoading && (
-                                <div className="flex justify-start">
-                                    <div className="bg-white/6 border border-white/10 px-4 py-3 rounded-2xl flex gap-1.5">
-                                        {[0, 0.2, 0.4].map((d, i) => (
-                                            <motion.div key={i} animate={{ y: [0, -5, 0] }} transition={{ repeat: Infinity, duration: 0.65, delay: d, ease: "easeInOut", type: "tween" }}
-                                                className="w-1.5 h-1.5 rounded-full bg-violet-400" />
+                                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'flex-end', gap: 8, width: '100%' }}>
+                                    <div style={{
+                                        width: 28, height: 28, borderRadius: '50%',
+                                        background: 'rgba(198,244,50,0.1)',
+                                        border: '1px solid rgba(198,244,50,0.2)',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                                    }}>
+                                        <Bot size={14} style={{ color: '#C6F432' }} />
+                                    </div>
+                                    <div style={{
+                                        padding: '0.85rem 1rem',
+                                        borderRadius: '1.2rem 1.2rem 1.2rem 0.25rem',
+                                        background: 'rgba(255,255,255,0.05)',
+                                        border: '1px solid rgba(255,255,255,0.08)',
+                                        display: 'flex', gap: 4, alignItems: 'center',
+                                    }}>
+                                        {[0, 0.15, 0.3].map(d => (
+                                            <motion.div key={d} animate={{ y: [0, -4, 0], opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 0.8, delay: d }}
+                                                style={{ width: 6, height: 6, borderRadius: '50%', background: 'rgba(255,255,255,0.5)' }} />
                                         ))}
                                     </div>
-                                </div>
+                                </motion.div>
                             )}
                             <div ref={messagesEndRef} />
                         </div>
 
-                        {/* Input */}
-                        <div className="p-3 border-t border-white/10 bg-black/30">
-                            <form onSubmit={e => { e.preventDefault(); sendMessage(); }} className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-2">
-                                <input value={input} onChange={e => setInput(e.target.value)} placeholder="Ask anything…"
-                                    className="flex-1 bg-transparent text-sm text-white placeholder-gray-500 outline-none" />
-                                <button type="submit" disabled={!input.trim() || isLoading}
-                                    className="w-8 h-8 rounded-full bg-violet-600 hover:bg-violet-500 flex items-center justify-center disabled:opacity-40 transition-all shrink-0">
-                                    <Send size={14} className="text-white" />
+                        {/* Input Area */}
+                        <div style={{
+                            flexShrink: 0,
+                            padding: '1rem',
+                            borderTop: '1px solid rgba(255,255,255,0.06)',
+                            background: '#0a0a0c',
+                        }}>
+                            <form
+                                onSubmit={e => { e.preventDefault(); sendMessage(); }}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                    background: 'rgba(255,255,255,0.04)',
+                                    border: '1px solid rgba(255,255,255,0.08)',
+                                    borderRadius: 999,
+                                    padding: '0.4rem 0.4rem 0.4rem 1rem',
+                                    transition: 'all 0.2s',
+                                }}
+                                onFocus={e => (e.currentTarget.style.borderColor = 'rgba(198,244,50,0.4)')}
+                                onBlur={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)')}
+                            >
+                                <input
+                                    value={input}
+                                    onChange={e => setInput(e.target.value)}
+                                    placeholder="Ask me anything..."
+                                    style={{
+                                        flex: 1,
+                                        minWidth: 0,
+                                        background: 'transparent',
+                                        border: 'none',
+                                        outline: 'none',
+                                        color: '#fff',
+                                        fontSize: '0.9rem',
+                                        fontFamily: 'inherit',
+                                        fontWeight: 500,
+                                    }}
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={!input.trim() || isLoading}
+                                    style={{
+                                        flexShrink: 0,
+                                        width: 36, height: 36,
+                                        borderRadius: '50%',
+                                        border: 'none',
+                                        background: input.trim() && !isLoading ? '#C6F432' : 'rgba(255,255,255,0.08)',
+                                        color: input.trim() && !isLoading ? '#0d0d0d' : 'rgba(255,255,255,0.3)',
+                                        cursor: input.trim() && !isLoading ? 'pointer' : 'not-allowed',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        transition: 'all 0.2s',
+                                        boxShadow: input.trim() && !isLoading ? '0 4px 12px rgba(198,244,50,0.2)' : 'none',
+                                    }}
+                                >
+                                    <Send size={16} strokeWidth={2.5} style={{ marginLeft: 2, marginTop: 1 }} />
                                 </button>
                             </form>
                         </div>

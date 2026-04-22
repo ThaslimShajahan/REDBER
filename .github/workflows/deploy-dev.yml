@@ -21,12 +21,12 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
-          username: redber-api-dev
+          username: ${{ secrets.CP_BACKEND_DEV_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT }}
+          port: ${{ secrets.VPS_PORT || 22 }}
           script: |
             set -e
-            APP_DIR="$HOME/htdocs/api.dev.redber.in"
+            APP_DIR="/home/${{ secrets.CP_BACKEND_DEV_USER }}/htdocs/api.dev.redber.in"
 
             echo "📦 Cloning or updating repo (dev branch)..."
             mkdir -p "$APP_DIR"
@@ -47,11 +47,11 @@ jobs:
             pip install -r requirements.txt -q
 
             echo "🔑 Writing .env..."
-            printf 'SUPABASE_URL=%s\n' "${{ secrets.SUPABASE_URL }}" > .env
-            printf 'SUPABASE_KEY=%s\n' "${{ secrets.SUPABASE_KEY }}" >> .env
-            printf 'OPENAI_API_KEY=%s\n' "${{ secrets.OPENAI_API_KEY }}" >> .env
-            printf 'DEEPGRAM_API_KEY=%s\n' "${{ secrets.DEEPGRAM_API_KEY }}" >> .env
-            printf 'FIREBASE_SERVICE_ACCOUNT=%s\n' "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" >> .env
+            printf 'SUPABASE_URL=%s\n'               "${{ secrets.SUPABASE_URL }}"               > .env
+            printf 'SUPABASE_KEY=%s\n'               "${{ secrets.SUPABASE_KEY }}"               >> .env
+            printf 'OPENAI_API_KEY=%s\n'             "${{ secrets.OPENAI_API_KEY }}"             >> .env
+            printf 'DEEPGRAM_API_KEY=%s\n'           "${{ secrets.DEEPGRAM_API_KEY }}"           >> .env
+            printf 'FIREBASE_SERVICE_ACCOUNT=%s\n'   "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}"   >> .env
 
             echo "♻️  Restarting backend (port 7090)..."
             if pm2 list | grep -q "redber-backend-dev"; then
@@ -77,12 +77,12 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
-          username: redber-dev
+          username: ${{ secrets.CP_FRONTEND_DEV_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT }}
+          port: ${{ secrets.VPS_PORT || 22 }}
           script: |
             set -e
-            APP_DIR="$HOME/htdocs/dev.redber.in"
+            APP_DIR="/home/${{ secrets.CP_FRONTEND_DEV_USER }}/htdocs/dev.redber.in"
 
             echo "📦 Cloning or updating repo (dev branch)..."
             mkdir -p "$APP_DIR"
@@ -104,10 +104,9 @@ jobs:
             if pm2 list | grep -q "redber-frontend-dev"; then
               pm2 restart redber-frontend-dev
             else
-              pm2 start "npm run start" \
+              pm2 start "npm run start -- --port 7000" \
                 --name redber-frontend-dev \
-                --cwd "$(pwd)" \
-                --env PORT=7000
+                --cwd "$(pwd)"
               pm2 save
             fi
 

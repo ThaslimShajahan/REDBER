@@ -1,518 +1,916 @@
 "use client";
 
-import { motion, useScroll, useTransform } from "framer-motion";
+import { motion, AnimatePresence, useScroll, useSpring } from "framer-motion";
+import Image from "next/image";
+import Hero3DModel from "@/components/Hero3DModel";
 import Link from "next/link";
-import {
-  ArrowRight, Globe, Zap, MessageSquare, Edit3, Inbox,
-  MessageCircle, Link as LinkIcon, Users, CheckCircle, FileText,
-  Bot, Sparkles, Fingerprint, Activity, Languages, Target,
-  Phone, Clock, Star, CalendarCheck, ShieldCheck, TrendingUp,
-  ChevronDown, Coffee, Car, Stethoscope
-} from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { ArrowRight, ChevronDown, CheckCircle, ArrowUpRight, MessageCircle, Bot, Menu, X, ChevronUp, Facebook } from "lucide-react";
+import { useState, useEffect } from "react";
 import { API_BASE } from "../lib/api";
-import RedberMascot from "../components/RedberMascot";
+import RedberMascot from "@/components/RedberMascot";
 
-const INDUSTRIES = [
-  { icon: Coffee, label: "Restaurant & Café" },
-  { icon: Car, label: "Car Dealership" },
-  { icon: Stethoscope, label: "Clinic & Healthcare" },
-  { icon: ActivityIcon, label: "Salon & Spa" },
+const fadeUp = (delay = 0) => ({
+  initial: { opacity: 0, y: 32 },
+  whileInView: { opacity: 1, y: 0 },
+  viewport: { once: true, margin: "-60px" },
+  transition: { duration: 0.6, delay, ease: "easeOut" } as const,
+});
+
+const faqs = [
+  { q: "Do I need to know how to code?", a: "Not at all! Simply enter your website URL and Redber learns everything automatically. Setup takes about 15 minutes." },
+  { q: "How does Redber book appointments?", a: "Redber captures customer preferences directly in the chat and sends it to your inbox instantly." },
+  { q: "Can I customize responses?", a: "Yes! Set guardrails, compliance rules, and train Redber with your own content, menus, and pricing." },
+  { q: "What languages does it support?", a: "English, Arabic, Spanish, French, and more. Redber automatically detects the customer's language." }
 ];
-
-function ActivityIcon(props: any) { return <Activity {...props} />; }
-
-const PLANS = [
-  {
-    emoji: "🟢", name: "Starter", billing: "Monthly / Yearly",
-    priceMonthly: "₹5,500/mo", priceYearly: "₹55,000/yr",
-    save: "Save ₹11,000 yearly",
-    tagline: "Best for small businesses starting with AI automation.",
-    features: [
-      "AI Chat Receptionist",
-      "Website chat widget integration",
-      "Basic knowledge base training",
-      "Website content crawling",
-      "Lead capture (name, phone, email)",
-      "CRM lead dashboard",
-      "Conversation history",
-      "Email notifications for new leads",
-      "Up to 1 website",
-    ],
-    suitable: ["Small shops", "Service businesses", "Restaurants", "Consultants"],
-    badge: null, badgeStyle: "",
-    cardStyle: "bg-[#0e0e12] border border-white/10",
-    btnStyle: "bg-white/8 hover:bg-white/15 text-white",
-    checkColor: "text-emerald-400",
-    nameColor: "text-gray-300",
-    taglineColor: "text-gray-500",
-    priceColor: "text-white",
-    billingColor: "text-gray-500",
-  },
-  {
-    emoji: "⭐", name: "Growth", billing: "Monthly / Yearly",
-    priceMonthly: "₹9,999/mo", priceYearly: "₹1,00,000/yr",
-    save: "Save ₹19,988 yearly",
-    tagline: "Best for businesses receiving frequent enquiries.",
-    features: [
-      "Everything in Starter, plus:",
-      "PDF document training",
-      "Product catalog training",
-      "Multiple knowledge sources",
-      "Lead export (CSV / Excel)",
-      "Conversation summaries",
-      "Analytics dashboard",
-      "Conversion rate & peak chat times",
-      "Priority support · Up to 2 websites",
-    ],
-    suitable: ["Clinics", "Car dealerships", "Retail businesses", "E-commerce stores"],
-    badge: "⭐ MOST POPULAR", badgeStyle: "bg-gradient-to-r from-indigo-500 to-violet-500 text-white",
-    cardStyle: "bg-gradient-to-b from-indigo-950 to-[#0e0e12] border-2 border-indigo-500/50 shadow-[0_0_60px_rgba(99,102,241,0.2)] scale-[1.03] z-10",
-    btnStyle: "bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white shadow-lg shadow-indigo-900/40",
-    checkColor: "text-indigo-400",
-    nameColor: "text-indigo-300",
-    taglineColor: "text-indigo-200/50",
-    priceColor: "text-white",
-    billingColor: "text-indigo-300/50",
-  },
-  {
-    emoji: "🚀", name: "Business", billing: "Monthly / Yearly",
-    priceMonthly: "₹18,999/mo", priceYearly: "₹1,70,000/yr",
-    save: "Save ₹57,988 yearly",
-    tagline: "Full AI automation for larger businesses.",
-    features: [
-      "Everything in Growth, plus:",
-      "Unlimited AI conversations",
-      "Advanced website crawler",
-      "Lead scoring & conversation insights",
-      "Full conversation logs",
-      "Customer interaction reports",
-      "Multi-language AI support",
-      "Up to 5 websites",
-    ],
-    suitable: ["Showrooms", "Hospitals", "Real estate", "Large service businesses"],
-    badge: null, badgeStyle: "",
-    cardStyle: "bg-[#0e0e12] border border-white/10",
-    btnStyle: "bg-white/8 hover:bg-white/15 text-white",
-    checkColor: "text-emerald-400",
-    nameColor: "text-gray-300",
-    taglineColor: "text-gray-500",
-    priceColor: "text-white",
-    billingColor: "text-gray-500",
-  },
-  {
-    emoji: "💎", name: "2-Year Plan", billing: "Best Value · Business Package",
-    priceMonthly: "≈ ₹11,875/mo avg", priceYearly: "₹2,85,000 total",
-    save: "Free setup + training included",
-    tagline: "Long-term AI automation with full Business package + free onboarding.",
-    features: [
-      "Everything in Business Plan",
-      "Free full AI setup & configuration",
-      "Free knowledge base training",
-      "Priority onboarding support",
-      "System optimization included",
-      "Locked-in pricing for 2 years",
-    ],
-    suitable: ["Businesses wanting long-term AI automation"],
-    badge: "💎 BEST VALUE", badgeStyle: "bg-gradient-to-r from-amber-400 to-orange-400 text-black",
-    cardStyle: "bg-gradient-to-b from-amber-950/60 to-[#0e0e12] border border-amber-500/30",
-    btnStyle: "bg-gradient-to-r from-amber-500 to-orange-400 hover:from-amber-400 hover:to-orange-300 text-black font-black",
-    checkColor: "text-amber-400",
-    nameColor: "text-amber-400",
-    taglineColor: "text-amber-200/40",
-    priceColor: "text-white",
-    billingColor: "text-amber-300/40",
-  },
-];
-
-function IndiaPricing() {
-  return (
-    <div className="max-w-6xl mx-auto">
-      {/* Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch">
-        {PLANS.map((plan, i) => (
-          <motion.div
-            key={plan.name}
-            initial={{ opacity: 0, y: 24 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: i * 0.1, duration: 0.5 }}
-            whileHover={{ y: -8, transition: { duration: 0.2 } }}
-            className={`flex flex-col relative rounded-[2rem] p-8 transition-all duration-300 ${plan.cardStyle} group h-full`}
-          >
-            {/* Top Badge */}
-            <div className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap z-20">
-              {plan.badge && (
-                <span className={`${plan.badgeStyle} text-[10px] font-black px-4 py-1.5 rounded-full shadow-2xl tracking-widest`}>
-                  {plan.badge}
-                </span>
-              )}
-            </div>
-
-            {/* Plan Icon & Name */}
-            <div className="flex items-center gap-3 mb-5">
-              <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-2xl">
-                {plan.emoji}
-              </div>
-              <div className="text-left">
-                <p className={`text-xs font-black uppercase tracking-widest ${plan.nameColor}`}>{plan.name}</p>
-                <p className={`text-[10px] font-bold opacity-60 ${plan.billingColor}`}>{plan.billing}</p>
-              </div>
-            </div>
-
-            {/* Price */}
-            <div className="mb-4">
-              <div className="flex items-baseline gap-1 flex-wrap">
-                <span className={`text-3xl font-black ${plan.priceColor} tracking-tight`}>
-                  {plan.priceMonthly}
-                </span>
-              </div>
-              <div className="mt-1">
-                <span className={`text-xs font-semibold opacity-70 ${plan.billingColor}`}>
-                  {plan.priceYearly}
-                </span>
-              </div>
-              <div className={`text-[10px] font-bold mt-1.5 ${plan.checkColor}`}>
-                ✓ {plan.save}
-              </div>
-            </div>
-
-            {/* Tagline */}
-            <p className={`text-xs leading-relaxed mb-5 font-medium ${plan.taglineColor}`}>{plan.tagline}</p>
-
-            {/* Features */}
-            <div className="space-y-2.5 mb-5 flex-1">
-              {plan.features.map((f, fi) => (
-                <div key={fi} className="flex items-start gap-2.5">
-                  <div className={`mt-0.5 shrink-0 ${plan.checkColor}`}>
-                    <CheckCircle size={12} />
-                  </div>
-                  <span className={`text-xs leading-snug transition-colors ${f.includes("plus:") ? "font-bold text-gray-200" : "font-medium text-gray-400 group-hover:text-gray-200"}`}>{f}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Suitable For */}
-            {(plan as any).suitable?.length > 0 && (
-              <div className="mb-5 pt-4 border-t border-white/5">
-                <p className="text-[9px] font-black uppercase tracking-widest text-gray-600 mb-2">Suitable for</p>
-                <div className="flex flex-wrap gap-1">
-                  {(plan as any).suitable.map((s: string, si: number) => (
-                    <span key={si} className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-white/5 text-gray-500 border border-white/5">{s}</span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* CTA */}
-            <Link
-              href="/contact"
-              className={`block w-full text-center ${plan.btnStyle} font-black py-4 rounded-2xl transition-all text-[11px] uppercase tracking-[0.15em] hover:scale-[1.02] active:scale-[0.98] shadow-xl`}
-            >
-              Get Started
-            </Link>
-          </motion.div>
-        ))}
-      </div>
-
-      {/* Trust Footer */}
-      <div className="mt-16 pt-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-6 opacity-60 group">
-        <div className="flex items-center gap-8">
-          <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest">
-            <ShieldCheck size={14} className="text-indigo-400" /> Secure Payment
-          </div>
-          <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest">
-            <ActivityIcon size={14} className="text-indigo-400" /> Instant Access
-          </div>
-          <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest">
-            <Star size={14} className="text-indigo-400" /> 24/7 Support
-          </div>
-        </div>
-        <p className="text-[10px] font-bold uppercase tracking-widest">
-          All prices in Indian Rupees (₹)
-        </p>
-      </div>
-    </div>
-  );
-}
 
 export default function Home() {
-  const [bots, setBots] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
-  const heroRef = useRef<HTMLDivElement>(null);
-  const { scrollYProgress } = useScroll({ target: heroRef, offset: ["start start", "end start"] });
-  const opacity = useTransform(scrollYProgress, [0, 1], [1, 0]);
-  const scale = useTransform(scrollYProgress, [0, 1], [1, 0.95]);
+  const [bots, setBots] = useState<any[]>([]);
+  const [loadingBots, setLoadingBots] = useState(true);
+  const [isYearly, setIsYearly] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const [preloaderDone, setPreloaderDone] = useState(false);
+  const { scrollYProgress } = useScroll();
+  const scaleX = useSpring(scrollYProgress, { stiffness: 300, damping: 30 });
+
+  useEffect(() => {
+    const t = setTimeout(() => setPreloaderDone(true), 2800);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    const onScroll = () => setShowScrollTop(window.scrollY > 600);
+    window.addEventListener("scroll", onScroll);
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/bots/public/list`)
       .then(res => res.json())
       .then(data => {
-        // API may return plain array or { bots: [] } shaped object
         const list = Array.isArray(data) ? data : (Array.isArray(data?.bots) ? data.bots : []);
         setBots(list);
-        setLoading(false);
+        setLoadingBots(false);
       })
-      .catch(() => { setBots([]); setLoading(false); });
+      .catch(() => { setBots([]); setLoadingBots(false); });
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#020202] text-gray-100 font-sans selection:bg-indigo-500/30 overflow-x-hidden">
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        body { font-family: 'Inter', sans-serif; background: #0d0d0d; color: #f0f0f0; overflow-x: hidden; }
 
-      {/* Background */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[80vw] h-[80vh] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-[#020202] to-transparent blur-[120px] opacity-70" />
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:64px_64px] [mask-image:radial-gradient(ellipse_60%_60%_at_50%_0%,#000_70%,transparent_100%)]" />
-      </div>
+        .section { padding: 8rem 2rem; }
+        .inner { max-width: 1280px; width: 100%; margin: 0 auto; }
 
-      {/* Nav */}
-      <nav className="fixed top-0 w-full z-50 backdrop-blur-xl bg-black/40 border-b border-white/5">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <img src="/redber_logo_transperent.png" alt="Redber" className="h-8 w-auto object-contain" />
+        .gf-tag { font-size: 0.65rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: #C6F432; background: rgba(198,244,50,0.12); padding: 0.35rem 0.8rem; border-radius: 999px; display: inline-flex; margin-bottom: 1.5rem; }
+
+        /* Nav */
+        .gf-nav { position: fixed; top: 1.5rem; left: 50%; transform: translateX(-50%); width: calc(100% - 2rem); max-width: 1200px; z-index: 100; background: rgba(13,13,13,0.85); backdrop-filter: blur(20px); border-radius: 999px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 10px 40px rgba(0,0,0,0.4); padding: 0.5rem 1.5rem; }
+        .gf-nav-inner { width: 100%; display: flex; align-items: center; justify-content: space-between; height: 64px; }
+        .gf-nav-links { display: flex; gap: 3rem; list-style: none; }
+        .gf-nav-links a { color: rgba(255,255,255,0.55); font-size: 0.95rem; font-weight: 600; text-decoration: none; transition: color .2s; }
+        .gf-nav-links a:hover { color: #fff; }
+        .gf-btn-pill { border-radius: 999px; font-weight: 800; font-size: 0.95rem; padding: 0.75rem 1.75rem; cursor: pointer; text-decoration: none; transition: all .2s; display: inline-flex; align-items: center; gap: 0.4rem; border: none; }
+        .gf-btn-amber { background: #C6F432; color: #0d0d0d; }
+        .gf-btn-amber:hover { background: #aad424; }
+        .gf-btn-dark { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.12); }
+        .gf-btn-dark:hover { background: rgba(255,255,255,0.18); }
+        .nav-logo { height: auto; width: 150px; }
+
+        /* Hero */
+        .hero { position: relative; padding: 180px 2rem 6rem; background: #0d0d0d; text-align: center; overflow: hidden; }
+        .hero-glow-tl { position: absolute; top: -15%; left: -10%; width: 700px; height: 700px; background: radial-gradient(circle, rgba(100,220,255,0.12) 0%, transparent 65%); border-radius: 50%; pointer-events: none; z-index: 0; }
+        .hero-glow-tr { position: absolute; top: -5%; right: -8%; width: 600px; height: 600px; background: radial-gradient(circle, rgba(180,100,255,0.1) 0%, transparent 65%); border-radius: 50%; pointer-events: none; z-index: 0; }
+        .hero-glow-b { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 900px; height: 400px; background: radial-gradient(ellipse, rgba(198,244,50,0.08) 0%, transparent 65%); border-radius: 50%; pointer-events: none; z-index: 0; }
+        h1.hero-h1 { position: relative; z-index: 2; font-size: clamp(3.2rem, 7vw, 6.5rem); font-weight: 900; line-height: 1; letter-spacing: -0.04em; margin-bottom: 3rem; color: #fff; }
+        .hero-h1-top { display: flex; align-items: center; justify-content: center; gap: 0.5rem; flex-wrap: wrap; }
+        @keyframes shimmer-sweep {
+          0%   { background-position: 0% center; }
+          100% { background-position: 200% center; }
+        }
+        .metallic-text { display: block; background: linear-gradient(90deg, #444 0%, #666 30%, #c9893a 44%, #f0c060 50%, #c9893a 56%, #666 70%, #444 100%); background-size: 300% auto; -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: shimmer-sweep 7s linear infinite; }
+        .hero-shimmer { background: linear-gradient(90deg, #666 0%, #999 30%, #c9893a 44%, #f0c060 50%, #c9893a 56%, #999 70%, #666 100%); background-size: 300% auto; -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: shimmer-sweep 7s linear infinite; }
+
+        /* Hero 3-column grid */
+        .hero-grid { display: grid; grid-template-columns: 1fr 480px 1fr; gap: 2rem; align-items: center; max-width: 1280px; margin: 0 auto; }
+        .hero-left-col { display: flex; flex-direction: column; gap: 1.5rem; align-items: flex-start; }
+        .hero-right-col { display: flex; flex-direction: column; gap: 1.5rem; align-items: flex-end; }
+        .hero-mascot-col { display: flex; justify-content: center; align-items: flex-end; }
+        .hero-stat-card { background: rgba(255,255,255,0.04); border-radius: 20px; padding: 1.5rem 2rem; box-shadow: 0 10px 40px rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.07); text-align: left; width: 100%; backdrop-filter: blur(8px); }
+        .hero-stat-card .stat-num { font-size: 3rem; font-weight: 900; line-height: 1; color: #fff; }
+        .hero-stat-card .stat-num span { color: #C6F432; }
+        .hero-stat-card .stat-label { font-size: 0.8rem; font-weight: 600; color: rgba(255,255,255,0.4); margin-top: 0.4rem; line-height: 1.4; }
+        .hero-pill-card { background: rgba(255,255,255,0.05); border-radius: 999px; padding: 0.75rem 1.25rem; border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; gap: 0.75rem; width: fit-content; backdrop-filter: blur(8px); }
+        .hero-cta-block { text-align: left; }
+
+        .logo-band { padding: 3rem 2rem; border-top: 1px solid rgba(255,255,255,0.05); }
+        .logo-band-title { font-size: 0.75rem; font-weight: 700; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 1.5rem; }
+        .logo-band-inner { display: flex; justify-content: center; align-items: center; gap: clamp(2rem, 6vw, 5rem); flex-wrap: wrap; opacity: 0.2; filter: grayscale(100%) invert(1); }
+        .logo-band-inner img { height: 28px; width: auto; }
+
+        /* Results */
+        .results-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4rem; align-items: center; }
+        .results-img { border-radius: 1.5rem; overflow: hidden; height: 420px; position: relative; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+        .results-h2 { font-size: clamp(2.5rem, 5vw, 3.2rem); font-weight: 900; line-height: 1.1; letter-spacing: -0.02em; margin-bottom: 1.5rem; color: #fff; }
+        .results-portraits { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
+        .results-portraits img { width: 44px; height: 44px; border-radius: 0.5rem; object-fit: cover; }
+        
+        /* Features Grid */
+        .features-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 1.25rem; }
+        .feat-card { border-radius: 1.75rem; overflow: hidden; position: relative; padding: 2.5rem; background: #141414; box-shadow: 0 4px 24px rgba(0,0,0,0.3); display: flex; flex-direction: column; min-height: 220px; border: 1px solid rgba(255,255,255,0.06); transition: transform 0.3s, box-shadow 0.3s, border-color 0.3s; }
+        .feat-card:hover { transform: translateY(-4px); box-shadow: 0 16px 48px rgba(198,244,50,0.08); border-color: rgba(198,244,50,0.2); }
+        .feat-icon { width: 52px; height: 52px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; margin-bottom: 1.5rem; flex-shrink: 0; }
+        .feat-title { font-size: 1.3rem; font-weight: 800; line-height: 1.25; margin-bottom: 0.6rem; letter-spacing: -0.01em; color: #fff; }
+        .feat-desc { font-size: 0.875rem; color: rgba(255,255,255,0.45); line-height: 1.6; }
+        .feat-badge { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.65rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; padding: 0.3rem 0.8rem; border-radius: 999px; margin-bottom: 1rem; background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); }
+        
+        /* Full Width CTA */
+        .cta-fullwidth { background: #111; padding: 7rem 2rem; text-align: left; position: relative; overflow: hidden; border-top: 1px solid rgba(255,255,255,0.06); border-bottom: 1px solid rgba(255,255,255,0.06); }
+        .cta-fullwidth-inner { max-width: 1280px; margin: 0 auto; display: grid; grid-template-columns: 1fr auto; gap: 4rem; align-items: center; position: relative; z-index: 2; }
+        .cta-fullwidth-bg { position: absolute; inset: 0; background-image: radial-gradient(circle at 10% 50%, rgba(198,244,50,0.1) 0%, transparent 50%), radial-gradient(circle at 90% 20%, rgba(100,220,255,0.07) 0%, transparent 40%); }
+        @media(max-width: 768px) { .cta-fullwidth-inner { grid-template-columns: 1fr; } }
+        
+        /* Pricing */
+        .pricing-grid { display: grid; grid-template-columns: 1fr 1.15fr 1fr; gap: 1.5rem; margin-top: 3rem; align-items: stretch; }
+        .pc { border-radius: 2rem; padding: 2.5rem; display: flex; flex-direction: column; }
+        .pc-plain { background: #141414; border: 1px solid rgba(255,255,255,0.07); }
+        .pc-featured { background: linear-gradient(145deg, #1a1a1a, #0f1a0f); color: #fff; box-shadow: 0 30px 80px rgba(198,244,50,0.12); border: 1px solid rgba(198,244,50,0.25); }
+        .pc-outline { background: #141414; border: 1px solid rgba(255,255,255,0.07); }
+        .pc-badge { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.65rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; padding: 0.4rem 1rem; border-radius: 999px; margin-bottom: 1.5rem; width: fit-content; }
+        .pc-name { font-size: 1rem; font-weight: 700; color: rgba(255,255,255,0.35); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.08em; }
+        .pc-price { font-size: 3.5rem; font-weight: 900; line-height: 1; letter-spacing: -0.04em; color: #fff; }
+        .pc-price-sub { font-size: 0.85rem; font-weight: 600; color: rgba(255,255,255,0.35); margin-top: 0.5rem; }
+        .pc-divider { height: 1px; background: rgba(255,255,255,0.07); margin: 2rem 0; }
+        .pc-list { list-style: none; display: flex; flex-direction: column; gap: 0.9rem; flex-grow: 1; margin-bottom: 2.5rem; }
+        .pc-list li { font-size: 0.9rem; font-weight: 600; color: rgba(255,255,255,0.6); display: flex; align-items: center; gap: 0.75rem; }
+        .pc-check { width: 20px; height: 20px; border-radius: 50%; background: rgba(198,244,50,0.15); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        
+        /* Operations Matrix */
+        .ops-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 3rem; }
+        .ops-col { display: flex; flex-direction: column; gap: 1.5rem; }
+        .ops-card { border-radius: 1.2rem; overflow: hidden; position: relative; }
+        .ops-yellow { background: linear-gradient(135deg, #1a2a0a, #141414); padding: 3rem; display: flex; flex-direction: column; justify-content: center; border: 1px solid rgba(198,244,50,0.2); }
+        .ops-yellow h3 { font-size: 1.8rem; font-weight: 900; line-height: 1.1; margin-bottom: 1rem; color: #fff; }
+        .ops-yellow p { font-size: 0.9rem; color: rgba(255,255,255,0.5); margin-bottom: 2rem; line-height: 1.5; }
+        .ops-img { width: 100%; height: 100%; object-fit: cover; min-height: 250px; }
+        .ops-img-tall { height: 100%; min-height: 400px; }
+        
+        /* Bots Grid */
+        .bots-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 2rem; margin-top: 3rem; }
+        .bot-card { background: #141414; border-radius: 1.5rem; border: 1px solid rgba(255,255,255,0.05); padding: 1.5rem; display: flex; flex-direction: column; position: relative; overflow: hidden; filter: saturate(0.12) brightness(0.55); transition: filter 0.5s ease, transform 0.5s ease, box-shadow 0.5s ease, border-color 0.5s ease; box-shadow: 0 4px 24px rgba(0,0,0,0.5); }
+        .bot-card:hover { transform: translateY(-8px); filter: saturate(1) brightness(1); box-shadow: 0 0 0 1px var(--card-border, rgba(198,244,50,0.5)), 0 8px 32px var(--card-glow, rgba(198,244,50,0.3)), 0 20px 60px var(--card-glow, rgba(198,244,50,0.2)); border-color: var(--card-border, rgba(198,244,50,0.5)); }
+
+        .chat-preview-box { background: #0d0d0d; border: 1px solid rgba(255,255,255,0.06); border-radius: 1rem; padding: 1.25rem 1rem; margin-bottom: 1.5rem; flex-grow: 1; display: flex; flex-direction: column; gap: 0.8rem; }
+        .chat-bubble { padding: 0.75rem 1rem; border-radius: 1rem; font-size: 0.85rem; line-height: 1.4; max-width: 85%; font-weight: 500; }
+        .chat-bubble.left { background: #1e1e1e; border: 1px solid rgba(255,255,255,0.07); color: rgba(255,255,255,0.8); border-bottom-left-radius: 0.25rem; align-self: flex-start; }
+        .chat-bubble.right { background: #C6F432; color: #0d0d0d; border-bottom-right-radius: 0.25rem; align-self: flex-end; font-weight: 700; }
+
+        /* FAQ */
+        .faq-grid { display: grid; grid-template-columns: 1fr 1.5fr; gap: 4rem; align-items: start; }
+        .faq-left h2 { font-size: 3rem; font-weight: 900; line-height: 1.1; margin-bottom: 1.5rem; letter-spacing: -0.02em; color: #fff; }
+        .faq-item { background: #141414; border: 1px solid rgba(255,255,255,0.07); border-radius: 1rem; margin-bottom: 0.75rem; overflow: hidden; transition: border-color 0.2s; }
+        .faq-item:hover { border-color: rgba(198,244,50,0.2); }
+        .faq-btn { width: 100%; padding: 1.5rem; text-align: left; display: flex; justify-content: space-between; align-items: center; background: none; border: none; cursor: pointer; font-size: 1rem; font-weight: 700; color: #fff; }
+        .faq-btn svg { color: rgba(255,255,255,0.3); transition: transform 0.3s; }
+        .faq-btn.open svg { transform: rotate(180deg); color: #C6F432; }
+        .faq-content { padding: 0 1.5rem 1.5rem; font-size: 0.95rem; color: rgba(255,255,255,0.5); line-height: 1.6; }
+        
+        /* Footer */
+        .gf-footer { background: #0a0a0a; border-top: 1px solid rgba(255,255,255,0.06); padding: 0; margin-top: 0; }
+        .footer-top { padding: 6rem 2rem 4rem; position: relative; overflow: hidden; }
+        .footer-top::before { content: ''; position: absolute; bottom: -30%; left: -5%; width: 700px; height: 600px; background: radial-gradient(circle, rgba(198,244,50,0.05) 0%, transparent 60%); border-radius: 50%; }
+        .footer-top::after { content: ''; position: absolute; top: -20%; right: -5%; width: 500px; height: 500px; background: radial-gradient(circle, rgba(100,220,255,0.04) 0%, transparent 60%); border-radius: 50%; }
+        .footer-cta h2 { font-size: 3.5rem; font-weight: 900; line-height: 1.1; margin-bottom: 2rem; letter-spacing: -0.03em; color: #fff; }
+        .footer-links h4 { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 1.5rem; color: rgba(255,255,255,0.3); }
+        .footer-links ul { list-style: none; }
+        .footer-links li { margin-bottom: 0.9rem; }
+        .footer-links a { color: rgba(255,255,255,0.5); font-size: 0.9rem; text-decoration: none; font-weight: 500; transition: color 0.2s; }
+        .footer-links a:hover { color: #C6F432; }
+        .footer-bottom { border-top: 1px solid rgba(255,255,255,0.05); padding: 1.75rem 2rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
+        
+        .footer-grid-top { display: grid; grid-template-columns: 1fr 1fr; gap: 4rem; margin-bottom: 5rem; }
+        .footer-grid-links { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem; padding-top: 0.5rem; }
+        .footer-stats-row { display: flex; gap: 3rem; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 3rem; flex-wrap: wrap; }
+
+        @media(max-width: 1100px) {
+          .hero-grid { grid-template-columns: 1fr; text-align: center; }
+          .hero-left-col, .hero-right-col { align-items: center; flex-direction: row; flex-wrap: wrap; justify-content: center; }
+          .hero-stat-card { max-width: 300px; }
+          .hero-cta-block { text-align: center; }
+          .hero-mascot-col { order: -1; height: 350px; }
+        }
+        @media(max-width: 900px) {
+          .features-grid { grid-template-columns: 1fr 1fr !important; }
+          .features-grid .feat-card { grid-column: span 1 !important; }
+          .pricing-grid { grid-template-columns: 1fr !important; max-width: 440px; margin-inline: auto; }
+          .ops-grid { grid-template-columns: 1fr !important; }
+          .results-grid { grid-template-columns: 1fr !important; }
+          .cta-fullwidth-inner { grid-template-columns: 1fr !important; text-align: center; }
+          .cta-fullwidth-inner > div:last-child { align-items: center !important; }
+        }
+        @media(max-width: 768px) {
+          .gf-nav-links, .gf-nav-desktop-btns { display: none !important; }
+          .gf-nav-hamburger { display: flex !important; }
+          h1.hero-h1 { font-size: 2.4rem !important; }
+          .hero-grid { gap: 1.5rem; }
+          .hero-stat-card { max-width: 100% !important; }
+          .features-grid { grid-template-columns: 1fr !important; }
+          .features-grid .feat-card { grid-column: span 1 !important; min-height: 180px; }
+          .results-grid, .ops-grid, .faq-grid { grid-template-columns: 1fr !important; }
+          .faq-grid { gap: 2rem; }
+          .pricing-grid { grid-template-columns: 1fr !important; max-width: 380px; margin-inline: auto; }
+          .section { padding: 4rem 1.25rem !important; }
+          .logo-band-inner { gap: 1.5rem !important; }
+          .cta-fullwidth { padding: 4rem 1.25rem !important; }
+          .cta-fullwidth-inner { grid-template-columns: 1fr !important; text-align: center; }
+          .cta-fullwidth-inner > div:last-child { align-items: center !important; }
+          .ops-grid .ops-col { display: flex; flex-direction: column; }
+          .hero { padding: 100px 1.5rem 4rem !important; }
+          .bots-grid { grid-template-columns: 1fr !important; }
+          .footer-cta h2 { font-size: 2.2rem !important; }
+          .footer-grid-top { grid-template-columns: 1fr !important; gap: 2.5rem; }
+          .footer-grid-links { grid-template-columns: 1fr 1fr !important; }
+          .gf-nav { top: 0.75rem !important; width: calc(100% - 1.5rem) !important; padding: 0.25rem 1rem !important; }
+          .gf-nav-inner { height: 44px !important; }
+          .nav-logo { width: 112px !important; }
+        }
+      `}</style>
+
+      {/* REDBER PRELOADER */}
+      <AnimatePresence>
+        {!preloaderDone && (
+          <motion.div
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.7, ease: "easeInOut" } }}
+            style={{ position: "fixed", inset: 0, background: "#000", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" }}
+          >
+            {/* Logo */}
+            <div style={{ position: "relative", zIndex: 2, marginBottom: "0.5rem" }}>
+              <img src="/logo/Redber Logo white.svg" alt="Redber" style={{ width: 140, height: "auto" }} />
+            </div>
+
+            {/* Glowing line progress bar */}
+            <div style={{ position: "relative", width: 220, height: 2, background: "rgba(255,255,255,0.1)", borderRadius: 1 }}>
+              <motion.div
+                initial={{ width: "0%" }}
+                animate={{ width: "100%" }}
+                transition={{ duration: 2.4, ease: "easeInOut" }}
+                style={{ position: "relative", height: "100%", background: "linear-gradient(90deg, rgba(198,244,50,0) 0%, rgba(198,244,50,1) 100%)", borderRadius: 1 }}
+              >
+                {/* Neon tip */ }
+                <div style={{ position: "absolute", top: "50%", right: 0, transform: "translateY(-50%)", width: 20, height: 2, background: "#fff", boxShadow: "0 0 10px 4px rgba(198, 244, 50, 0.9), 0 0 20px 8px rgba(198, 244, 50, 0.6)", borderRadius: "50%" }} />
+              </motion.div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* SCROLL PROGRESS BAR */}
+      <motion.div style={{ scaleX, transformOrigin: "left", position: "fixed", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(to right, #C6F432, #64dcff)", zIndex: 9999 }} />
+
+      {/* SCROLL TO TOP */}
+      <AnimatePresence>
+        {showScrollTop && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }}
+            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+            style={{ position: "fixed", bottom: "2rem", right: "2rem", zIndex: 9000, width: 48, height: 48, borderRadius: "50%", background: "#111", color: "#fff", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 24px rgba(0,0,0,0.2)" }}
+          >
+            <ChevronUp size={22} />
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      {/* NAV */}
+      <nav className="gf-nav">
+        <div className="gf-nav-inner">
+          <Link href="/" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
+            <img src="/logo/Redber Logo white.svg" alt="Redber" className="nav-logo" />
+          </Link>
+          <ul className="gf-nav-links" style={{ display: "flex", gap: "2.5rem", listStyle: "none" }}>
+            <li><Link href="#how-it-works">How It Works</Link></li>
+            <li><a href="#pricing">Pricing</a></li>
+            <li><a href="#faq">FAQ</a></li>
+            <li><a href="#demo">Live Demo</a></li>
+            <li><a href="/contact">Contact</a></li>
+          </ul>
+          <div className="gf-nav-desktop-btns" style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+            <Link href="/contact" className="gf-btn-pill gf-btn-amber">Book Demo</Link>
           </div>
-          <div className="hidden md:flex items-center gap-8 font-medium text-sm text-gray-300">
-            <a href="#how-it-works" className="hover:text-white transition-colors">How It Works</a>
-            <a href="#industries" className="hover:text-white transition-colors">Industries</a>
-            <a href="#demo" className="hover:text-white transition-colors">Live Demo</a>
-            <a href="#pricing" className="hover:text-white transition-colors">Pricing</a>
-            <Link href="/contact" className="hover:text-white transition-colors">Contact</Link>
-          </div>
-          <div className="flex items-center gap-3">
-            <a href="#demo" className="hidden sm:flex items-center gap-2 text-gray-300 hover:text-white text-sm font-semibold transition-colors">
-              See Demo
-            </a>
-            <Link href="/contact" className="flex items-center gap-2 bg-white text-black hover:bg-gray-100 px-5 py-2.5 rounded-full text-sm font-bold transition-all hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.1)]">
-              Get Started Free
-            </Link>
-          </div>
+          <button className="gf-nav-hamburger" style={{ display: "none", background: "none", border: "none", cursor: "pointer", color: "#fff", padding: "0.5rem" }} onClick={() => setIsMobileMenuOpen(true)}>
+            <Menu size={32} />
+          </button>
         </div>
       </nav>
 
-      {/* ═══════════════════════════════════════
-          HERO
-      ═══════════════════════════════════════ */}
-      <motion.section
-        ref={heroRef}
-        style={{ opacity, scale }}
-        className="relative pt-44 pb-32 px-6 flex flex-col items-center text-center w-full z-10 min-h-[90vh] justify-center overflow-hidden"
-      >
-        {/* VIDEO BACKGROUND */}
-        <div className="absolute inset-0 z-0">
-          <video
-            autoPlay
-            loop
-            muted
-            playsInline
-            className="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-screen"
-            src="/bg.webm"
-          />
-          {/* Gradient fade out to blend with the rest of the black page */}
-          <div className="absolute inset-0 bg-gradient-to-b from-[#020202]/40 via-transparent to-[#020202]" />
-          {/* Subtle noise/grid overlay */}
-          <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:64px_64px] pointer-events-none" />
-        </div>
-
-        <div className="relative z-10 max-w-5xl mx-auto flex flex-col items-center">
-        {/* Badge */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9, filter: "blur(10px)" }}
-          animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-          transition={{ duration: 0.7, ease: "easeOut" }}
-          className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-xs font-bold px-4 py-2 rounded-full mb-8"
-        >
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-          </span>
-          Answering customers 24/7 — even when you&apos;re closed
-        </motion.div>
-
-        {/* Headline */}
-        <motion.h1
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.1, ease: "easeOut" }}
-          className="text-5xl md:text-7xl font-black tracking-tighter mb-6 leading-[1.05]"
-        >
-          Your AI Receptionist
-          <br />
-          <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400">
-            That Never Sleeps.
-          </span>
-        </motion.h1>
-
-        {/* Sub-headline */}
-        <motion.p
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.2 }}
-          className="text-lg md:text-xl text-gray-400 mb-4 leading-relaxed max-w-2xl mx-auto font-light"
-        >
-          Redber answers customer questions, books appointments, and captures leads — automatically —
-          so your team can focus on what matters.
-        </motion.p>
-        <motion.p
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.25 }}
-          className="text-sm text-gray-500 mb-10"
-        >
-          Built for restaurants, clinics, car dealerships, salons, and more.
-        </motion.p>
-
-        {/* CTAs */}
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.3 }}
-          className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16"
-        >
-          <Link href="/contact" className="flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white px-8 py-4 rounded-full font-bold text-base shadow-[0_0_40px_rgba(99,102,241,0.35)] hover:shadow-[0_0_60px_rgba(99,102,241,0.5)] hover:-translate-y-1 transition-all duration-300">
-            Get Your AI Receptionist <ArrowRight size={18} />
-          </Link>
-          <a href="#demo" className="flex items-center gap-2 border border-white/15 text-gray-300 hover:text-white hover:border-white/30 px-7 py-4 rounded-full font-semibold text-base transition-all">
-            <MessageCircle size={18} /> See It Live
-          </a>
-        </motion.div>
-
-        {/* Social proof strip */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.8, delay: 0.5 }}
-          className="flex flex-wrap items-center justify-center gap-6 text-sm text-gray-500 mb-20"
-        >
-          {[
-            { icon: Clock, text: "Responds in under 3 seconds" },
-            { icon: CalendarCheck, text: "Books appointments automatically" },
-            { icon: TrendingUp, text: "Captures 3× more leads" },
-            { icon: ShieldCheck, text: "No coding required" },
-          ].map(({ icon: Icon, text }, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <Icon size={14} className="text-indigo-400" />
-              <span>{text}</span>
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} style={{ position: "fixed", top: 0, left: 0, right: 0, background: "#0d0d0d", zIndex: 9999, padding: "1.5rem", borderBottom: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 10px 40px rgba(0,0,0,0.5)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
+              <img src="/logo/Redber Logo white.svg" alt="Redber" style={{ height: 40, width: "auto" }} onError={(e) => { (e.target as HTMLImageElement).src = "/logo/Redber Logo Black.svg"; (e.target as HTMLImageElement).style.filter = "invert(1)"; }} />
+              <button onClick={() => setIsMobileMenuOpen(false)} style={{ background: "rgba(255,255,255,0.1)", color: "#fff", border: "none", borderRadius: "50%", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><X size={24}/></button>
             </div>
-          ))}
-        </motion.div>
+            <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "1.5rem", fontSize: "1.2rem", fontWeight: 700 }}>
+              <li><a href="#features" onClick={() => setIsMobileMenuOpen(false)} style={{ color: "#fff", textDecoration: "none" }}>Features</a></li>
+              <li><a href="#pricing" onClick={() => setIsMobileMenuOpen(false)} style={{ color: "#fff", textDecoration: "none" }}>Pricing</a></li>
+              <li><a href="#faq" onClick={() => setIsMobileMenuOpen(false)} style={{ color: "#fff", textDecoration: "none" }}>FAQ</a></li>
+              <li><a href="#demo" onClick={() => setIsMobileMenuOpen(false)} style={{ color: "#fff", textDecoration: "none" }}>Live Demo</a></li>
+              <li><a href="/contact" onClick={() => setIsMobileMenuOpen(false)} style={{ color: "#fff", textDecoration: "none" }}>Contact</a></li>
+              <li><Link href="/contact" className="gf-btn-pill gf-btn-amber" style={{ width: "100%", justifyContent: "center", marginTop: "1rem", padding: "1rem", color: "#0d0d0d" }} onClick={() => setIsMobileMenuOpen(false)}>Book Demo</Link></li>
+            </ul>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-        {/* ── COST COMPARISON VISUAL ── */}
-        <motion.div
-          initial={{ opacity: 0, y: 60 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-100px" }}
-          transition={{ duration: 1, ease: "easeOut" }}
-          className="relative w-full max-w-5xl mx-auto"
-        >
-          <div className="bg-[#0d0d10] border border-white/10 rounded-[2.5rem] p-8 md:p-14 relative overflow-hidden shadow-2xl">
-            <div className="absolute top-0 right-0 w-72 h-72 bg-indigo-500/8 blur-[100px] rounded-full pointer-events-none" />
-            <div className="absolute bottom-0 left-0 w-72 h-72 bg-purple-500/8 blur-[100px] rounded-full pointer-events-none" />
+      {/* HERO */}
+      <section className="hero">
+        {/* Ambient glow orbs */}
+        <div className="hero-glow-tl" />
+        <div className="hero-glow-tr" />
+        <div className="hero-glow-b" />
 
-            <div className="text-center mb-12 relative z-10">
-              <h2 className="text-2xl md:text-4xl font-black text-white mb-3">
-                One receptionist vs. Redber AI
-              </h2>
-              <p className="text-gray-400">Same job. One costs $3,500/mo. The other costs $49.</p>
+        <h1 className="hero-h1">
+          <span className="hero-h1-top">
+            <span className="hero-shimmer">AI Agents</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 3, margin: "0 0.5rem" }}>
+              {[12, 20, 32, 40, 32, 20, 12].map((h, i) => (
+                <span key={i} style={{ display: "block", width: 6, height: h/2, borderRadius: 3, background: "#C6F432", opacity: 0.5 + i * 0.07 }} />
+              ))}
+            </span>
+            <span className="hero-shimmer">That</span>
+          </span>
+          <span className="metallic-text">Run Operations</span>
+        </h1>
+
+        <div className="hero-grid">
+          {/* LEFT COLUMN */}
+          <motion.div className="hero-left-col" initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.4 }}>
+            <div className="hero-stat-card">
+              <div className="stat-num"><span>24</span>/7</div>
+              <div className="stat-label">Always on — never<br/>misses a customer</div>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
-              {/* Old Way */}
-              <div className="bg-rose-500/5 border border-rose-500/15 rounded-2xl p-6">
-                <p className="text-xs font-bold uppercase tracking-widest text-rose-400 mb-4">❌ Traditional Receptionist</p>
-                <div className="space-y-3 text-sm text-gray-300">
-                  {[
-                    "Works 8 hrs/day, 5 days/week",
-                    "Misses calls after hours",
-                    "Gets sick, takes holidays",
-                    "$3,500+ per month salary",
-                    "Can only handle 1 caller at once",
-                  ].map((t, i) => (
-                    <div key={i} className="flex items-center gap-2 text-gray-500"><span className="text-rose-500 shrink-0">✕</span>{t}</div>
-                  ))}
+            <div className="hero-cta-block">
+              <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "1rem", lineHeight: 1.7, marginBottom: "1.5rem", fontWeight: 500, maxWidth: 320 }}>
+                Redber automates complex operations through AI agents that think, learn, and act seamlessly.
+              </p>
+              <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
+                <Link href="/contact" className="gf-btn-pill gf-btn-dark">Try for Free</Link>
+                <div style={{ width: 48, height: 48, borderRadius: "50%", background: "#C6F432", color: "#0d0d0d", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, boxShadow: "0 4px 15px rgba(198,244,50,0.25)" }}>
+                  <ArrowUpRight size={22} />
                 </div>
               </div>
+            </div>
+          </motion.div>
 
-              {/* Arrow */}
-              <div className="flex items-center justify-center">
-                <div className="text-center">
-                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center mx-auto mb-3 shadow-[0_0_40px_rgba(99,102,241,0.4)]">
-                    <Bot size={28} className="text-white" />
+          {/* CENTER / MASCOT */}
+          <motion.div className="hero-mascot-col" initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.2, type: "spring", stiffness: 80 }}>
+            <div style={{ position: "relative", width: "100%", maxWidth: 480, height: 520, zIndex: 10 }}>
+              <Hero3DModel />
+            </div>
+          </motion.div>
+
+          {/* RIGHT COLUMN */}
+          <motion.div className="hero-right-col" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.5 }}>
+            <div className="hero-pill-card">
+              <span style={{ color: "#C6F432", fontSize: "1.3rem" }}>⚡</span>
+              <div>
+                <div style={{ fontWeight: 900, fontSize: "1.1rem", lineHeight: 1, color: "#fff" }}>0.25s</div>
+                <div style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.4)", fontWeight: 600 }}>First reply, every time</div>
+              </div>
+              <div style={{ display: "flex", marginLeft: "0.25rem" }}>
+                <img src="https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=40&h=40&fit=crop&crop=face" alt="" style={{width: 32, height: 32, borderRadius: "50%", border: "2px solid #1e1e1e", marginLeft: -10, zIndex: 2}} />
+                <img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=40&h=40&fit=crop&crop=face" alt="" style={{width: 32, height: 32, borderRadius: "50%", border: "2px solid #1e1e1e", marginLeft: -10, zIndex: 1}} />
+              </div>
+            </div>
+
+            <div className="hero-stat-card" style={{ textAlign: "right", alignSelf: "flex-end" }}>
+              <div className="stat-num">0.25<span>s</span></div>
+              <div className="stat-label">Real-Time Intelligent<br/>Responses</div>
+            </div>
+
+            <div className="hero-stat-card" style={{ background: "rgba(198,244,50,0.08)", border: "1px solid rgba(198,244,50,0.2)", padding: "1.25rem 1.5rem", display: "flex", alignItems: "center", gap: "1rem" }}>
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(198,244,50,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.3rem" }}>⚡</div>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#fff" }}>Auto-Booking</div>
+                <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.4)", fontWeight: 600 }}>Captures appointments in chat</div>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+
+        {/* Logo Band Hidden */}
+      </section>
+
+      {/* ── INDUSTRIES ── */}
+      <section className="section">
+        <div className="inner">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            {/* Card 1: Restaurant */}
+            <motion.div style={{ background: "#0d0505", borderRadius: "1.5rem", padding: "2.5rem", border: "1px solid rgba(255,100,100,0.15)", boxShadow: "0 20px 40px rgba(0,0,0,0.5), inset 0 0 60px rgba(255,50,50,0.02)" }} {...fadeUp(0)}>
+              <div style={{ display: "flex", gap: "1rem", alignItems: "center", marginBottom: "1.5rem" }}>
+                <div style={{ fontSize: "2rem" }}>🍽️</div>
+                <div>
+                  <h3 style={{ color: "#fff", fontWeight: 800, fontSize: "1.3rem", letterSpacing: "-0.02em" }}>Restaurant & Café</h3>
+                  <div style={{ color: "#ff4d4d", fontSize: "0.75rem", fontWeight: 700 }}>68% of diners look for info online after hours</div>
+                </div>
+              </div>
+              <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", fontWeight: 800, letterSpacing: "0.08em", marginBottom: "1.2rem" }}>REDBER ANSWERS THESE INSTANTLY:</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                {["What are your opening hours?", "Do you have vegan options?", "Can I make a reservation?", "Do you offer delivery?"].map(q => (
+                  <div key={q} style={{ background: "rgba(255,255,255,0.03)", padding: "0.8rem 1.25rem", borderRadius: "999px", color: "rgba(255,255,255,0.6)", fontSize: "0.85rem", border: "1px solid rgba(255,255,255,0.04)", display: "flex", gap: "0.75rem", alignItems: "center" }}>
+                    <span style={{ width: 12, height: 12, borderRadius: "50%", border: "2px solid #ff4d4d", opacity: 0.6 }} /> {q}
                   </div>
-                  <p className="text-white font-bold text-sm">Switch to</p>
-                  <p className="text-indigo-400 font-black text-lg">Redber AI</p>
-                </div>
+                ))}
               </div>
+            </motion.div>
 
-              {/* Redber  */}
-              <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-6">
-                <p className="text-xs font-bold uppercase tracking-widest text-emerald-400 mb-4">✅ Redber AI Receptionist</p>
-                <div className="space-y-3 text-sm">
-                  {[
-                    "Works 24/7, 365 days a year",
-                    "Answers every call & chat instantly",
-                    "Never calls in sick",
-                    "Starting at $49/month",
-                    "Handles unlimited conversations",
-                  ].map((t, i) => (
-                    <div key={i} className="flex items-center gap-2 text-gray-200"><span className="text-emerald-400 shrink-0">✓</span>{t}</div>
-                  ))}
+            {/* Card 2: Auto */}
+            <motion.div style={{ background: "#050b12", borderRadius: "1.5rem", padding: "2.5rem", border: "1px solid rgba(100,150,255,0.15)", boxShadow: "0 20px 40px rgba(0,0,0,0.5), inset 0 0 60px rgba(50,100,255,0.02)" }} {...fadeUp(0.1)}>
+              <div style={{ display: "flex", gap: "1rem", alignItems: "center", marginBottom: "1.5rem" }}>
+                <div style={{ fontSize: "2rem" }}>🚗</div>
+                <div>
+                  <h3 style={{ color: "#fff", fontWeight: 800, fontSize: "1.3rem", letterSpacing: "-0.02em" }}>Car Dealership</h3>
+                  <div style={{ color: "#4d94ff", fontSize: "0.75rem", fontWeight: 700 }}>72% of car buyers research online before calling</div>
                 </div>
               </div>
-            </div>
+              <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", fontWeight: 800, letterSpacing: "0.08em", marginBottom: "1.2rem" }}>REDBER ANSWERS THESE INSTANTLY:</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                {["Is the 2024 SUV still available?", "Can I book a test drive?", "What finance options do you offer?", "What's your trade-in process?"].map(q => (
+                  <div key={q} style={{ background: "rgba(255,255,255,0.03)", padding: "0.8rem 1.25rem", borderRadius: "999px", color: "rgba(255,255,255,0.6)", fontSize: "0.85rem", border: "1px solid rgba(255,255,255,0.04)", display: "flex", gap: "0.75rem", alignItems: "center" }}>
+                    <span style={{ width: 12, height: 12, borderRadius: "50%", border: "2px solid #4d94ff", opacity: 0.6 }} /> {q}
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+
+            {/* Card 3: Medical */}
+            <motion.div style={{ background: "#05100a", borderRadius: "1.5rem", padding: "2.5rem", border: "1px solid rgba(50,200,150,0.15)", boxShadow: "0 20px 40px rgba(0,0,0,0.5), inset 0 0 60px rgba(50,200,150,0.02)" }} {...fadeUp(0.2)}>
+              <div style={{ display: "flex", gap: "1rem", alignItems: "center", marginBottom: "1.5rem" }}>
+                <div style={{ fontSize: "2rem" }}>🏥</div>
+                <div>
+                  <h3 style={{ color: "#fff", fontWeight: 800, fontSize: "1.3rem", letterSpacing: "-0.02em" }}>Medical Clinic & Spa</h3>
+                  <div style={{ color: "#32c896", fontSize: "0.75rem", fontWeight: 700 }}>44% of patients book outside of business hours</div>
+                </div>
+              </div>
+              <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", fontWeight: 800, letterSpacing: "0.08em", marginBottom: "1.2rem" }}>REDBER ANSWERS THESE INSTANTLY:</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                {["Are you accepting new patients?", "How do I book an appointment?", "What insurance do you accept?", "What are your consultation fees?"].map(q => (
+                  <div key={q} style={{ background: "rgba(255,255,255,0.03)", padding: "0.8rem 1.25rem", borderRadius: "999px", color: "rgba(255,255,255,0.6)", fontSize: "0.85rem", border: "1px solid rgba(255,255,255,0.04)", display: "flex", gap: "0.75rem", alignItems: "center" }}>
+                    <span style={{ width: 12, height: 12, borderRadius: "50%", border: "2px solid #32c896", opacity: 0.6 }} /> {q}
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+
+            {/* Card 4: Salon */}
+            <motion.div style={{ background: "#100510", borderRadius: "1.5rem", padding: "2.5rem", border: "1px solid rgba(200,50,200,0.15)", boxShadow: "0 20px 40px rgba(0,0,0,0.5), inset 0 0 60px rgba(200,50,200,0.02)" }} {...fadeUp(0.3)}>
+              <div style={{ display: "flex", gap: "1rem", alignItems: "center", marginBottom: "1.5rem" }}>
+                <div style={{ fontSize: "2rem" }}>💆‍♀️</div>
+                <div>
+                  <h3 style={{ color: "#fff", fontWeight: 800, fontSize: "1.3rem", letterSpacing: "-0.02em" }}>Salon, Spa & Beauty</h3>
+                  <div style={{ color: "#c832c8", fontSize: "0.75rem", fontWeight: 700 }}>Missed bookings cost salons $8K+ per year</div>
+                </div>
+              </div>
+              <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", fontWeight: 800, letterSpacing: "0.08em", marginBottom: "1.2rem" }}>REDBER ANSWERS THESE INSTANTLY:</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                {["What services do you offer?", "How much is a haircut?", "Can I book online?", "Do you offer gift vouchers?"].map(q => (
+                  <div key={q} style={{ background: "rgba(255,255,255,0.03)", padding: "0.8rem 1.25rem", borderRadius: "999px", color: "rgba(255,255,255,0.6)", fontSize: "0.85rem", border: "1px solid rgba(255,255,255,0.04)", display: "flex", gap: "0.75rem", alignItems: "center" }}>
+                    <span style={{ width: 12, height: 12, borderRadius: "50%", border: "2px solid #c832c8", opacity: 0.6 }} /> {q}
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+
           </div>
-        </motion.div>
-        
         </div>
-      </motion.section>
+      </section>
 
-      {/* ═══════════════════════════════════════
-          HOW IT WORKS
-      ═══════════════════════════════════════ */}
-      <section id="how-it-works" className="relative py-32 px-6">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-16">
-            <p className="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-3">Simple Setup</p>
-            <h2 className="text-4xl md:text-5xl font-black mb-4">Up & running in 15 minutes</h2>
-            <p className="text-gray-400 text-lg max-w-xl mx-auto">No technical skills needed. If you can copy-paste a link, you can deploy Redber.</p>
+      {/* HOW IT WORKS */}
+      <section id="how-it-works" style={{ background: "#090909", padding: "7rem 0", borderTop: "1px solid rgba(255,255,255,0.05)", borderBottom: "1px solid rgba(255,255,255,0.05)", overflow: "hidden", position: "relative" }}>
+        <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: "800px", height: "800px", background: "radial-gradient(circle, rgba(198,244,50,0.04) 0%, transparent 70%)", pointerEvents: "none" }} />
+        <div className="inner" style={{ maxWidth: 1100 }}>
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.7 }}
+            style={{ textAlign: "center", marginBottom: "5rem" }}
+          >
+            <div className="gf-tag" style={{ marginBottom: "1.5rem" }}>HOW IT WORKS</div>
+            <h2 style={{ fontSize: "clamp(2.2rem, 5vw, 3.5rem)", fontWeight: 900, letterSpacing: "-0.03em", color: "#fff", marginBottom: "1.25rem", lineHeight: 1.1 }}>
+              From zero to AI workforce<br />
+              <span style={{ color: "#C6F432" }}>in three steps.</span>
+            </h2>
+            <p style={{ color: "rgba(255,255,255,0.45)", fontSize: "1.1rem", maxWidth: 520, margin: "0 auto", lineHeight: 1.7 }}>
+              Deploying Redber is seamless — no engineering team required.
+            </p>
+          </motion.div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
+            {[
+              { step: "01", title: "Connect Your Channels", desc: "Link your business phone number, website widget, WhatsApp, and social media accounts to the central Redber brain in one unified dashboard.", tags: ["📱 Phone", "🌐 Web Chat", "💬 WhatsApp", "📊 CRM"], color: "#C6F432", dir: -1 },
+              { step: "02", title: "Train The Model", desc: "Upload your PDFs, paste website URLs, and define your brand guardrails. The AI instantly processes your entire business knowledge base.", tags: ["📄 PDFs", "🔗 Website URL", "🛡️ Guardrails", "🧠 Knowledge Base"], color: "#64dcff", dir: 1 },
+              { step: "03", title: "Deploy & Automate 24/7", desc: "Flip the switch. Your AI agents begin handling infinite concurrent calls, bookings, and chats from day one — completely on autopilot.", tags: ["⚡ 0.25s Response", "🔄 24/7 Active", "📅 Auto-Book", "♾️ Unlimited Scale"], color: "#ff7eb3", dir: -1 }
+            ].map((item, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, x: item.dir * 60 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true, margin: "-60px" }}
+                transition={{ duration: 0.7, delay: 0.05, ease: [0.25, 0.46, 0.45, 0.94] }}
+                style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "2rem", alignItems: "flex-start", background: "#111", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "2rem", padding: "2.5rem", position: "relative", overflow: "hidden" }}
+              >
+                <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", background: `radial-gradient(ellipse at ${item.dir === -1 ? "0%" : "100%"} 50%, ${item.color}08 0%, transparent 60%)`, pointerEvents: "none" }} />
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.75rem" }}>
+                  <div style={{ width: 70, height: 70, borderRadius: "50%", background: "#1a1a1a", border: `1.5px solid ${item.color}`, boxShadow: `0 0 24px ${item.color}30`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.3rem", fontWeight: 900, color: item.color, flexShrink: 0 }}>
+                    {item.step}
+                  </div>
+                  {i < 2 && <motion.div initial={{ scaleY: 0 }} whileInView={{ scaleY: 1 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.6 }} style={{ width: 2, height: 32, background: `linear-gradient(to bottom, ${item.color}50, transparent)`, borderRadius: 99, transformOrigin: "top" }} />}
+                </div>
+                <div style={{ position: "relative", zIndex: 1 }}>
+                  <h3 style={{ fontSize: "clamp(1.2rem, 2.5vw, 1.65rem)", fontWeight: 800, color: "#fff", marginBottom: "0.75rem", letterSpacing: "-0.02em" }}>{item.title}</h3>
+                  <p style={{ color: "rgba(255,255,255,0.5)", lineHeight: 1.7, fontSize: "1rem", marginBottom: "1.25rem", maxWidth: 580 }}>{item.desc}</p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                    {item.tags.map(tag => (
+                      <span key={tag} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 999, padding: "0.3rem 0.85rem", fontSize: "0.8rem", fontWeight: 700, color: "rgba(255,255,255,0.5)" }}>{tag}</span>
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+            ))}
           </div>
+        </div>
+      </section>
 
-          <div className="relative">
-            {/* Connecting line */}
-            <div className="hidden md:block absolute top-12 left-[16.5%] right-[16.5%] h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+
+      {/* FEATURES GRID */}
+      <section id="features" className="section" style={{ paddingTop: 0 }}>
+        <div className="inner">
+          
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "3.5rem", flexWrap: "wrap", gap: "1.5rem" }}>
+            <div>
+              <div className="gf-tag">FEATURES</div>
+              <h2 style={{ fontSize: "clamp(2rem, 4vw, 3rem)", fontWeight: 900, marginBottom: "0.75rem", letterSpacing: "-0.02em", color: "#fff" }}>Everything your business needs</h2>
+              <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "1.05rem" }}>Purpose-built tools for modern AI receptionists.</p>
+            </div>
+            <Link href="/capabilities" style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)", padding: "0.8rem 1.5rem", borderRadius: "999px", color: "#fff", fontWeight: 700, fontSize: "0.95rem", textDecoration: "none", transition: "all 0.2s" }} onMouseOver={e=>{e.currentTarget.style.background="rgba(255,255,255,0.15)"; e.currentTarget.style.borderColor="rgba(255,255,255,0.2)"}} onMouseOut={e=>{e.currentTarget.style.background="rgba(255,255,255,0.08)"; e.currentTarget.style.borderColor="rgba(255,255,255,0.1)"}}>
+               Read All Capabilities <ArrowUpRight size={18} />
+            </Link>
+          </div>
+          
+          <div className="features-grid text-left">
+            {/* Row 1: Large card + 2 small */}
+            <motion.div className="feat-card" style={{ gridColumn: "span 5", background: "linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%)", color: "#fff", minHeight: 280 }} {...fadeUp(0)}>
+              <div className="feat-icon" style={{ background: "rgba(198,244,50,0.15)" }}>⚡</div>
+              <div className="feat-badge" style={{ background: "rgba(198,244,50,0.15)", color: "#C6F432" }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#C6F432", display: "block" }} /> Live
+              </div>
+              <div style={{ marginTop: "auto" }}>
+                <h3 className="feat-title" style={{ color: "#fff", fontSize: "1.8rem" }}>Instant AI Responses</h3>
+                <p className="feat-desc" style={{ color: "rgba(255,255,255,0.65)" }}>Respond in under 0.25 seconds across every channel — website, phone, and WhatsApp — 24 hours a day.</p>
+              </div>
+              <div style={{ position: "absolute", top: "2rem", right: "2rem", opacity: 0.06, fontSize: "8rem", lineHeight: 1 }}>⚡</div>
+            </motion.div>
+
+            <motion.div className="feat-card" style={{ gridColumn: "span 4", background: "linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%)" }} {...fadeUp(0.1)}>
+              <div className="feat-icon" style={{ background: "rgba(198,244,50,0.15)" }}>📅</div>
+              <h3 className="feat-title">Automated Booking</h3>
+              <p className="feat-desc">Customers book appointments directly in chat. Syncs with Google Calendar instantly — zero back-and-forth.</p>
+              <div style={{ marginTop: "auto", paddingTop: "1.5rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                {["Mon 10am ✓", "Wed 2pm ✓", "Fri 4pm ✓"].map(s => (
+                  <span key={s} style={{ fontSize: "0.72rem", fontWeight: 700, background: "rgba(255,255,255,0.1)", padding: "0.3rem 0.8rem", borderRadius: "999px", color: "#eee" }}>{s}</span>
+                ))}
+              </div>
+            </motion.div>
+
+            <motion.div className="feat-card" style={{ gridColumn: "span 3", background: "linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%)" }} {...fadeUp(0.15)}>
+              <div className="feat-icon" style={{ background: "rgba(198,244,50,0.15)" }}>🌐</div>
+              <h3 className="feat-title">50+ Languages</h3>
+              <p className="feat-desc">Auto-detects and replies in Arabic, Spanish, French, and more.</p>
+              <div style={{ marginTop: "auto", display: "flex", gap: "0.4rem", flexWrap: "wrap", paddingTop: "1rem" }}>
+                {["EN","AR","ES","FR","DE"].map(l => (
+                  <span key={l} style={{ fontSize: "0.68rem", fontWeight: 800, background: "rgba(198,244,50,0.15)", padding: "0.35rem 0.6rem", borderRadius: "6px", color: "#C6F432" }}>{l}</span>
+                ))}
+              </div>
+            </motion.div>
+
+            {/* Row 2: 3 + wide */}
+            <motion.div className="feat-card" style={{ gridColumn: "span 4", background: "linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%)" }} {...fadeUp(0.2)}>
+              <div className="feat-icon" style={{ background: "rgba(198,244,50,0.15)" }}>🎯</div>
+              <h3 className="feat-title">Smart Lead Capture</h3>
+              <p className="feat-desc">Automatically collects names, numbers, and intent. Every lead flows straight into your dashboard — no missed opportunities.</p>
+            </motion.div>
+
+            <motion.div className="feat-card" style={{ gridColumn: "span 4", background: "linear-gradient(135deg, #0d0d0d 0%, #1a1a0f 100%)", color: "#fff", position: "relative", overflow: "hidden" }} {...fadeUp(0.25)}>
+              <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle at 70% 30%, rgba(198,244,50,0.15) 0%, transparent 60%)" }} />
+              <div className="feat-icon" style={{ background: "rgba(198,244,50,0.15)", position: "relative", zIndex: 2 }}>🛡️</div>
+              <div style={{ position: "relative", zIndex: 2, marginTop: "auto" }}>
+                <h3 className="feat-title" style={{ color: "#fff" }}>Custom Guardrails</h3>
+                <p className="feat-desc" style={{ color: "rgba(255,255,255,0.6)" }}>Stays strictly on-topic. Set rules, compliance limits, and persona — Redber never goes off-script.</p>
+              </div>
+            </motion.div>
+
+            <motion.div className="feat-card" style={{ gridColumn: "span 4", background: "linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%)" }} {...fadeUp(0.3)}>
+              <div className="feat-icon" style={{ background: "rgba(198,244,50,0.15)" }}>🔗</div>
+              <h3 className="feat-title">Seamless Integrations</h3>
+              <p className="feat-desc">Connects with your Website, Phone, WhatsApp, and CRM platforms. Deploy everywhere in minutes.</p>
+              <div style={{ marginTop: "auto", paddingTop: "1rem", display: "flex", gap: "0.75rem", alignItems: "center" }}>
+                {["🌐 Web", "📱 Phone", "💬 WA", "📊 CRM"].map(i => (
+                  <span key={i} style={{ fontSize: "0.72rem", fontWeight: 700, background: "rgba(198,244,50,0.12)", padding: "0.35rem 0.75rem", borderRadius: "999px", color: "#C6F432" }}>{i}</span>
+                ))}
+              </div>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
+      {/* FULL WIDTH CTA */}
+      <div className="cta-fullwidth">
+        <div className="cta-fullwidth-bg" />
+        <div className="cta-fullwidth-inner">
+          <motion.div {...fadeUp(0)}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", background: "rgba(198,244,50,0.15)", border: "1px solid rgba(198,244,50,0.3)", borderRadius: "999px", padding: "0.4rem 1rem", marginBottom: "2rem" }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#C6F432", display: "block", boxShadow: "0 0 8px #C6F432" }} />
+              <span style={{ fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "#C6F432" }}>Now Live — AI Powered</span>
+            </div>
+            <h2 style={{ fontSize: "clamp(2.8rem, 5vw, 4.5rem)", fontWeight: 900, lineHeight: 1.05, letterSpacing: "-0.03em", color: "#fff", maxWidth: 680 }}>
+              Ready to stop missing
+              <span style={{ color: "#C6F432" }}> customers?</span>
+            </h2>
+            <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "1.1rem", lineHeight: 1.7, marginTop: "1.5rem", maxWidth: 520, fontWeight: 500 }}>
+              Redber deploys in minutes. No code needed. Your AI receptionist starts handling calls, chats, and bookings from day one.
+            </p>
+          </motion.div>
+
+          <motion.div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", alignItems: "flex-end" }} initial={{ opacity: 0, x: 30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }}>
+            <div style={{ textAlign: "right", marginBottom: "1rem" }}>
               {[
-                {
-                  step: "01", icon: Globe, color: "from-rose-500 to-orange-500",
-                  title: "Connect Your Business",
-                  desc: "Enter your website URL. Redber reads every page and builds its knowledge base automatically — menus, services, pricing, FAQs, everything.",
-                },
-                {
-                  step: "02", icon: Sparkles, color: "from-indigo-500 to-purple-500",
-                  title: "Train the Persona",
-                  desc: "Tell Redber its name, role, and tone. Our AI auto-generates a full personality — friendly, formal, or sales-focused — in one click.",
-                },
-                {
-                  step: "03", icon: MessageCircle, color: "from-emerald-500 to-teal-500",
-                  title: "Go Live Instantly",
-                  desc: "Add one line of code to your website, or share the direct link. Your AI receptionist starts answering customers immediately.",
-                },
-              ].map((s, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, y: 24 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: i * 0.12 }}
-                  className="flex flex-col items-center text-center"
-                >
-                  <div className={`w-24 h-24 rounded-3xl bg-gradient-to-br ${s.color} flex items-center justify-center mb-6 shadow-2xl relative`}>
-                    <s.icon size={36} className="text-white" />
-                    <span className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-[#020202] border border-white/15 text-white text-[10px] font-black flex items-center justify-center">{s.step}</span>
-                  </div>
-                  <h3 className="text-xl font-black text-white mb-3">{s.title}</h3>
-                  <p className="text-gray-400 text-sm leading-relaxed">{s.desc}</p>
+                { num: "0.25s", label: "Avg Response Time" },
+                { num: "24/7", label: "Always Online" },
+                { num: "∞", label: "Concurrent Calls" },
+              ].map(({ num, label }) => (
+                <div key={num} style={{ marginBottom: "1.25rem" }}>
+                  <div style={{ fontSize: "2.2rem", fontWeight: 900, color: "#fff", lineHeight: 1 }}>{num}</div>
+                  <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.4)", fontWeight: 600, marginTop: "0.2rem" }}>{label}</div>
+                </div>
+              ))}
+            </div>
+            <Link href="/contact" className="gf-btn-pill gf-btn-amber" style={{ fontSize: "1.1rem", padding: "1.1rem 2.8rem", boxShadow: "0 8px 30px rgba(198,244,50,0.15)", whiteSpace: "nowrap" }}>
+              Start Free Trial <ArrowRight size={18} />
+            </Link>
+            <span style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.35)", fontWeight: 600 }}>No credit card required</span>
+          </motion.div>
+        </div>
+      </div>
+
+      {/* PRICING */}
+      <section id="pricing" className="section" style={{ background: "#0a0a0a" }}>
+        <div className="inner">
+          <div className="text-center" style={{ marginBottom: "3.5rem" }}>
+            <div className="gf-tag">PRICING</div>
+            <h2 style={{ fontSize: "clamp(2.5rem, 5vw, 3.5rem)", fontWeight: 900, marginBottom: "1rem", letterSpacing: "-0.03em" }}>Simple, transparent pricing</h2>
+            <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "1rem", maxWidth: 480, margin: "0 auto 2rem" }}>Start for free, scale as you grow. No hidden fees.</p>
+            
+            {/* Toggle */}
+            <div style={{ display: "inline-flex", background: "#141414", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "999px", padding: "0.3rem", alignItems: "center", position: "relative", boxShadow: "0 4px 12px rgba(0,0,0,0.5)" }}>
+              <div style={{ position: "absolute", left: isYearly ? "50%" : "0.3rem", width: "calc(50% - 0.3rem)", height: "calc(100% - 0.6rem)", background: "rgba(255,255,255,0.1)", borderRadius: "999px", transition: "left 0.3s cubic-bezier(0.4, 0, 0.2, 1)" }} />
+              <button onClick={() => setIsYearly(false)} style={{ width: 130, padding: "0.65rem 0", zIndex: 1, border: "none", background: "none", color: isYearly ? "rgba(255,255,255,0.5)" : "#fff", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer", transition: "color 0.3s" }}>Monthly</button>
+              <button onClick={() => setIsYearly(true)} style={{ width: 130, padding: "0.65rem 0", zIndex: 1, border: "none", background: "none", color: isYearly ? "#fff" : "rgba(255,255,255,0.5)", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer", transition: "color 0.3s", position: "relative" }}>
+                Yearly
+                {!isYearly && <span style={{ position: "absolute", top: -18, right: 4, background: "#C6F432", color: "#0d0d0d", fontSize: "0.6rem", fontWeight: 800, padding: "0.2rem 0.5rem", borderRadius: "999px", whiteSpace: "nowrap" }}>Save 15%</span>}
+              </button>
+            </div>
+          </div>
+
+          <div className="pricing-grid">
+            {/* STARTER */}
+            <motion.div className="pc pc-plain" {...fadeUp(0)}>
+              {/* Spacer to match featured badge height */}
+              <div style={{ height: "2.1rem", marginBottom: "1.5rem" }} />
+              <div className="pc-name">Starter</div>
+              <div className="pc-price">{isYearly ? "₹55k" : "₹5,500"}</div>
+              <div className="pc-price-sub">per {isYearly ? "year" : "month"} · billed {isYearly ? "annually" : "monthly"}</div>
+              <div className="pc-divider" />
+              <ul className="pc-list">
+                {["Up to 1 website","Website chat widget","Basic knowledge base","Lead capture","CRM lead dashboard"].map(f => (
+                  <li key={f}>
+                    <span className="pc-check"><CheckCircle size={13} color="#C6F432" /></span>
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              <Link href="/contact" className="gf-btn-pill" style={{ background: "rgba(255,255,255,0.1)", color: "#fff", fontWeight: 700, justifyContent: "center", marginTop: "auto" }}>Get Started</Link>
+            </motion.div>
+
+            {/* GROWTH - Featured */}
+            <motion.div className="pc pc-featured" style={{ position: "relative", overflow: "hidden" }} {...fadeUp(0.1)}>
+              <div style={{ position: "absolute", top: 0, right: 0, width: 200, height: 200, background: "radial-gradient(circle at 100% 0%, rgba(198,244,50,0.15) 0%, transparent 60%)" }} />
+              <div className="pc-badge" style={{ background: "rgba(198,244,50,0.15)", color: "#C6F432" }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#C6F432", display: "block" }} />
+                Most Popular
+              </div>
+              <div className="pc-name" style={{ color: "rgba(255,255,255,0.5)" }}>Growth</div>
+              <div className="pc-price" style={{ color: "#fff" }}>{isYearly ? "₹1L" : "₹9,999"}</div>
+              <div className="pc-price-sub">per {isYearly ? "year" : "month"} · billed {isYearly ? "annually" : "monthly"}</div>
+              <div className="pc-divider" />
+              <ul className="pc-list">
+                {["Up to 2 websites","PDF document training","Product catalog training","Conversation summaries","Analytics dashboard","Priority support"].map(f => (
+                  <li key={f}>
+                    <span className="pc-check"><CheckCircle size={13} color="#C6F432" /></span>
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              <Link href="/contact" className="gf-btn-pill gf-btn-amber" style={{ justifyContent: "center", marginTop: "auto", fontSize: "1rem", padding: "0.9rem", boxShadow: "0 8px 24px rgba(198,244,50,0.15)" }}>Start Free Trial</Link>
+            </motion.div>
+
+            {/* BUSINESS */}
+            <motion.div className="pc pc-plain" {...fadeUp(0.2)}>
+              {/* Spacer to match featured badge height */}
+              <div style={{ height: "2.1rem", marginBottom: "1.5rem" }} />
+              <div className="pc-name">Business</div>
+              <div className="pc-price">{isYearly ? "₹1.7L" : "₹18,999"}</div>
+              <div className="pc-price-sub">per {isYearly ? "year" : "month"} · billed {isYearly ? "annually" : "monthly"}</div>
+              <div className="pc-divider" />
+              <ul className="pc-list">
+                {["Up to 5 websites","Unlimited conversations","Advanced web crawler","Lead scoring insights","Multi-language support"].map(f => (
+                  <li key={f}>
+                    <span className="pc-check"><CheckCircle size={13} color="#C6F432" /></span>
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              <Link href="/contact" className="gf-btn-pill" style={{ background: "rgba(255,255,255,0.1)", color: "#fff", fontWeight: 700, justifyContent: "center", marginTop: "auto" }}>Contact Us</Link>
+            </motion.div>
+          </div>
+
+          {/* Trust strip */}
+          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "2.5rem", marginTop: "3rem", flexWrap: "wrap" }}>
+            {["✓ 15-minute setup","✓ No credit card required","✓ Cancel anytime","✓ Free onboarding call"].map(t => (
+              <span key={t} style={{ fontSize: "0.8rem", fontWeight: 700, color: "rgba(255,255,255,0.3)" }}>{t}</span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── OPERATIONS (CAPABILITIES) ── */}
+      <section className="section" style={{ paddingTop: "4rem" }}>
+        <div className="inner">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: "1rem" }}>
+            <div>
+              <div className="gf-tag">CAPABILITIES</div>
+              <h2 style={{ fontSize: "clamp(2rem, 4vw, 3rem)", fontWeight: 900, lineHeight: 1.1 }}>Powering every part of<br/>your operations</h2>
+              <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.9rem", marginTop: "0.5rem" }}>More than just a chatbot. Redber is a full AI receptionist built for conversions.</p>
+            </div>
+            <Link href="/contact" className="gf-btn-pill gf-btn-dark">Read All Capabilities <ArrowUpRight size={16}/></Link>
+          </div>
+
+          <div className="ops-grid">
+            <div className="ops-col">
+              <motion.div className="ops-card" {...fadeUp(0)}>
+                <img src="https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=600&h=400&fit=crop" alt="" className="ops-img" />
+              </motion.div>
+              <motion.div className="ops-card ops-yellow" {...fadeUp(0.1)}>
+                <h3>24/7 Appointment Booking</h3>
+                <p>Customers can book directly in the chat. Redber captures date, time, name, and contact — no back-and-forth.</p>
+                <Link href="/contact" className="gf-btn-pill gf-btn-dark" style={{ alignSelf: "flex-start" }}>Learn More</Link>
+              </motion.div>
+            </div>
+            <div className="ops-col">
+              <motion.div className="ops-card ops-yellow" {...fadeUp(0.2)}>
+                <h3>Instant Smart Lead Capture</h3>
+                <p>Automatically asks for name, phone, and requirements at the right moment. Every lead goes straight into your dashboard.</p>
+                <Link href="/contact" className="gf-btn-pill gf-btn-dark" style={{ alignSelf: "flex-start" }}>Learn More</Link>
+              </motion.div>
+              <motion.div className="ops-card" {...fadeUp(0.3)}>
+                <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=600&h=600&fit=crop" alt="" className="ops-img ops-img-tall" />
+                <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(to top, #141414 60%, transparent)", padding: "5rem 2rem 2rem" }}>
+                  <h3 style={{ fontSize: "1.4rem", fontWeight: 900, marginBottom: "0.5rem", color: "#fff" }}>Always-On Multi-Language</h3>
+                  <p style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.5)", marginBottom: "1rem" }}>Your business never closes. Redber responds instantly in English, Arabic, Spanish, French, and more — perfectly interpreting user intent.</p>
+                  <Link href="/contact" className="gf-btn-pill gf-btn-dark px-6">Learn More</Link>
+                </div>
+              </motion.div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── LIVE BOTS / CHAT BOT LISTING ── */}
+      <section id="demo" className="section" style={{ background: "#0d0d0d" }}>
+        <div className="inner">
+          <div className="text-center mb-10">
+            <div className="gf-tag">LIVE DEMOS</div>
+            <h2 style={{ fontSize: "3rem", fontWeight: 900 }}>Take Redber for a spin</h2>
+            <p style={{ color: "rgba(255,255,255,0.5)" }}>Try interacting with these live AI receptionists to see the capabilities.</p>
+          </div>
+
+          <div className="bots-grid">
+            {loadingBots ? (
+              <div className="col-span-full py-10 text-center text-gray-500">Loading receptionists...</div>
+            ) : bots.filter(b => b.status === "Active").length === 0 ? (
+              <div className="col-span-full text-center p-10 bg-white/5 rounded-2xl border border-white/10">
+                <Bot className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <p className="font-bold text-xl mb-2">No Live Bots Yet</p>
+                <p className="text-gray-500">Create your first AI receptionist in the admin panel.</p>
+              </div>
+            ) : (
+              bots.filter(b => b.status === "Active" && b.id !== "redber-assistant-001" && !b.name.toLowerCase().includes("redber")).map((bot, idx) => {
+                const industry = (bot.persona_config?.industry || bot.role || "").toLowerCase();
+
+                type BotTheme = { accent: string; textColor: string; borderColor: string; bgGlow: string; userQ: string; botA: string; btnStyle: React.CSSProperties };
+                const theme: BotTheme = (() => {
+                  if (industry.includes("restaurant") || industry.includes("food") || industry.includes("cafe") || industry.includes("dining"))
+                    return { accent: "#ff7043", textColor: "#fff", borderColor: "rgba(255,112,67,0.35)", bgGlow: "rgba(255,112,67,0.08)", btnStyle: { background: "#ff7043", color: "#fff" }, userQ: "Can I book a table for 2 tonight?", botA: "Of course! 🍽️ We have spots at 7pm and 8:30pm. May I get your name to confirm the reservation?" };
+                  if (industry.includes("auto") || industry.includes("car") || industry.includes("dealer") || industry.includes("vehicle"))
+                    return { accent: "#4a9eff", textColor: "#fff", borderColor: "rgba(74,158,255,0.35)", bgGlow: "rgba(74,158,255,0.08)", btnStyle: { background: "#4a9eff", color: "#fff" }, userQ: "Is the 2024 SUV still available?", botA: "Yes, we have 2 left! 🚗 Would you like to schedule a test drive this weekend? I can book it right now." };
+                  if (industry.includes("medical") || industry.includes("clinic") || industry.includes("health") || industry.includes("doctor"))
+                    return { accent: "#26c6a2", textColor: "#fff", borderColor: "rgba(38,198,162,0.35)", bgGlow: "rgba(38,198,162,0.08)", btnStyle: { background: "#26c6a2", color: "#fff" }, userQ: "I need to see a dermatologist", botA: "Absolutely! 👨‍⚕️ Dr. Patel is available Tuesday at 11am or Thursday at 3pm. Which works best for you?" };
+                  if (industry.includes("salon") || industry.includes("beauty") || industry.includes("hair") || industry.includes("spa") || industry.includes("nail"))
+                    return { accent: "#c77dff", textColor: "#fff", borderColor: "rgba(199,125,255,0.35)", bgGlow: "rgba(199,125,255,0.08)", btnStyle: { background: "#c77dff", color: "#fff" }, userQ: "How much is a keratin hair treatment?", botA: "Our keratin treatments start from ₹1,800 ✨ Want me to book you in with Maya, our senior stylist?" };
+                  if (industry.includes("real estate") || industry.includes("property") || industry.includes("realty"))
+                    return { accent: "#7986cb", textColor: "#fff", borderColor: "rgba(121,134,203,0.35)", bgGlow: "rgba(121,134,203,0.08)", btnStyle: { background: "#7986cb", color: "#fff" }, userQ: "Can I view the 3BHK apartment?", botA: "Sure! 🏠 We have viewings Saturday morning and Sunday afternoon. Which day works for you?" };
+                  if (industry.includes("retail") || industry.includes("shop") || industry.includes("ecommerce") || industry.includes("store"))
+                    return { accent: "#26c6da", textColor: "#0d0d0d", borderColor: "rgba(38,198,218,0.35)", bgGlow: "rgba(38,198,218,0.08)", btnStyle: { background: "#26c6da", color: "#0d0d0d" }, userQ: "Do you offer free returns?", botA: "Yes! 📦 We offer hassle-free 30-day returns on all orders. Need help with a specific purchase?" };
+                  return { accent: "#C6F432", textColor: "#0d0d0d", borderColor: "rgba(198,244,50,0.25)", bgGlow: "rgba(198,244,50,0.06)", btnStyle: { background: "#C6F432", color: "#0d0d0d" }, userQ: "What are your business hours?", botA: "We're open Mon–Sat, 9am to 6pm! 😊 I can also book an appointment for you right now if you'd like." };
+                })();
+
+                return (
+                  <motion.div key={bot.id} className="bot-card" style={{ '--card-glow': `${theme.accent}50`, '--card-border': `${theme.accent}70` } as React.CSSProperties} {...fadeUp(idx * 0.1)}>
+                    {/* Accent top bar */}
+                    <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: theme.accent, borderRadius: "1.5rem 1.5rem 0 0" }} />
+
+                    <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1rem" }}>
+                      {bot.avatar ? (
+                        <img src={bot.avatar} alt={bot.name} style={{ width: 48, height: 48, borderRadius: "50%", objectFit: "cover" }} />
+                      ) : (
+                        <div style={{ width: 48, height: 48, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", textTransform: "uppercase", color: theme.textColor, background: theme.accent, fontWeight: 800, fontSize: "1.2rem", boxShadow: `0 4px 16px ${theme.bgGlow}` }}>
+                          {bot.name.charAt(0)}
+                        </div>
+                      )}
+                      <div>
+                        <h3 style={{ fontWeight: 800, fontSize: "1.2rem", lineHeight: 1.1 }}>{bot.name}</h3>
+                        <p style={{ fontSize: "0.7rem", color: theme.accent, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700, marginTop: "0.2rem" }}>{bot.role}</p>
+                      </div>
+                      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#10b981", display: "block", boxShadow: "0 0 8px rgba(16,185,129,0.6)" }} />
+                        <span style={{ fontSize: "0.7rem", fontWeight: 700, color: "#10b981" }}>ONLINE</span>
+                      </div>
+                    </div>
+
+                    <div className="chat-preview-box">
+                      <div className="chat-bubble left">
+                        Hi! I&apos;m {bot.name}. How can I help you today?
+                      </div>
+                      <div className="chat-bubble right" style={{ background: theme.accent, color: theme.textColor }}>
+                        {theme.userQ}
+                      </div>
+                      <div className="chat-bubble left">
+                        {theme.botA}
+                      </div>
+                    </div>
+
+                    <Link href={`/chat/${bot.name.toLowerCase()}`} className="gf-btn-pill" style={{ ...theme.btnStyle, width: "100%", justifyContent: "center", paddingTop: "0.8rem", paddingBottom: "0.8rem", fontSize: "0.95rem", display: "inline-flex", alignItems: "center", gap: "0.4rem", borderRadius: "999px", fontWeight: 800, textDecoration: "none" }}>
+                      Chat with {bot.name} <ArrowUpRight size={18} />
+                    </Link>
+                  </motion.div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* ── FAQ ── */}
+      <section id="faq" className="section" style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingBottom: "4rem" }}>
+        <div className="inner">
+          <div className="faq-grid">
+            <div className="faq-left">
+              <div className="gf-tag">FAQ</div>
+              <h2>Frequently<br/>Asked<br/>Questions</h2>
+              <p style={{ color: "rgba(255,255,255,0.4)", marginBottom: "2rem" }}>Got questions? We've got answers. If you can't find what you need here, get in touch.</p>
+              <Link href="/contact" className="gf-btn-pill gf-btn-dark">Contact Us</Link>
+            </div>
+            <div>
+              {faqs.map((faq, i) => (
+                <motion.div key={i} className="faq-item" {...fadeUp(i * 0.1)}>
+                  <button className={`faq-btn ${openFaq === i ? 'open' : ''}`} onClick={() => setOpenFaq(openFaq === i ? null : i)}>
+                    {faq.q}
+                    <ChevronDown size={20} />
+                  </button>
+                  <AnimatePresence>
+                    {openFaq === i && (
+                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden" }}>
+                        <div className="faq-content">{faq.a}</div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </motion.div>
               ))}
             </div>
@@ -520,359 +918,98 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ═══════════════════════════════════════
-          INDUSTRIES
-      ═══════════════════════════════════════ */}
-      <section id="industries" className="relative py-32 px-6 bg-[#040404] border-y border-white/5">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <p className="text-xs font-bold uppercase tracking-widest text-purple-400 mb-3">Built For Your Industry</p>
-            <h2 className="text-4xl md:text-5xl font-black mb-4">Works for any customer-facing business</h2>
-            <p className="text-gray-400 text-lg max-w-2xl mx-auto">Redber comes pre-trained for your industry. Deploy in minutes with smart defaults built for your business type.</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {[
-              {
-                emoji: "🍽️", industry: "Restaurant & Café", color: "from-rose-500/10 to-orange-500/10", border: "border-rose-500/20",
-                accent: "text-rose-400",
-                answers: ["What are your opening hours?", "Do you have vegan options?", "Can I make a reservation?", "Do you offer delivery?"],
-                stat: "68% of diners look for info online after hours",
-              },
-              {
-                emoji: "🚗", industry: "Car Dealership", color: "from-blue-500/10 to-indigo-500/10", border: "border-blue-500/20",
-                accent: "text-blue-400",
-                answers: ["Is the 2024 SUV still available?", "Can I book a test drive?", "What finance options do you offer?", "What's your trade-in process?"],
-                stat: "72% of car buyers research online before calling",
-              },
-              {
-                emoji: "🏥", industry: "Medical Clinic & Spa", color: "from-emerald-500/10 to-teal-500/10", border: "border-emerald-500/20",
-                accent: "text-emerald-400",
-                answers: ["Are you accepting new patients?", "How do I book an appointment?", "What insurance do you accept?", "What are your consultation fees?"],
-                stat: "44% of patients book outside of business hours",
-              },
-              {
-                emoji: "💇", industry: "Salon, Spa & Beauty", color: "from-pink-500/10 to-purple-500/10", border: "border-pink-500/20",
-                accent: "text-pink-400",
-                answers: ["What services do you offer?", "How much is a haircut?", "Can I book online?", "Do you offer gift vouchers?"],
-                stat: "Missed bookings cost salons $8K+ per year on average",
-              },
-            ].map((ind, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.1 }}
-                className={`bg-gradient-to-br ${ind.color} border ${ind.border} rounded-3xl p-8 relative overflow-hidden group`}
-              >
-                <div className="flex items-center gap-4 mb-5">
-                  <span className="text-4xl">{ind.emoji}</span>
-                  <div>
-                    <h3 className="text-xl font-black text-white">{ind.industry}</h3>
-                    <p className={`text-xs font-bold ${ind.accent}`}>{ind.stat}</p>
-                  </div>
+      <footer className="gf-footer">
+        {/* Top section — big CTA + links */}
+        <div className="footer-top">
+          <div className="inner" style={{ position: "relative", zIndex: 2 }}>
+            <div className="footer-grid-top">
+              {/* Left: Big CTA */}
+              <div>
+                <div className="gf-tag" style={{ marginBottom: "1.5rem" }}>GET STARTED</div>
+                <h2 style={{ fontSize: "clamp(2.5rem, 5vw, 4rem)", fontWeight: 900, lineHeight: 1.05, letterSpacing: "-0.04em", color: "#fff", marginBottom: "1.5rem" }}>
+                  Ready to put AI<br/>to work?
+                </h2>
+                <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "1rem", lineHeight: 1.7, marginBottom: "2rem", maxWidth: 400 }}>
+                  Join businesses using Redber to automate customer conversations, capture leads, and grow — 24/7.
+                </p>
+                <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+                  <Link href="/contact" className="gf-btn-pill gf-btn-amber" style={{ padding: "0.9rem 2rem", fontSize: "1rem" }}>Start Free Trial <ArrowRight size={16} /></Link>
+                  <Link href="#demo" className="gf-btn-pill gf-btn-dark" style={{ padding: "0.9rem 2rem", fontSize: "1rem" }}>See Live Demo</Link>
                 </div>
-                <p className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-3">Redber answers these instantly:</p>
-                <div className="space-y-2">
-                  {ind.answers.map((q, qi) => (
-                    <div key={qi} className="flex items-center gap-2 bg-white/5 border border-white/5 rounded-xl px-4 py-2.5">
-                      <MessageCircle size={12} className={`${ind.accent} shrink-0`} />
-                      <span className="text-sm text-gray-300">{q}</span>
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ═══════════════════════════════════════
-          FEATURES
-      ═══════════════════════════════════════ */}
-      <section id="features" className="relative py-32 px-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <p className="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-3">Capabilities</p>
-            <h2 className="text-4xl md:text-5xl font-black mb-4">More than just a chatbot</h2>
-            <p className="text-gray-400 text-lg max-w-2xl mx-auto">Redber is a full AI receptionist — it remembers customers, captures leads, books appointments, and reports back to you.</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {[
-              { icon: Clock, color: "bg-rose-500/15 text-rose-400", title: "24/7 Availability", desc: "Your business never closes. Redber responds at 3am on a Sunday just as well as Monday morning." },
-              { icon: CalendarCheck, color: "bg-indigo-500/15 text-indigo-400", title: "Appointment Booking", desc: "Customers can book directly in the chat. Redber captures date, time, name, and contact — no back-and-forth." },
-              { icon: Users, color: "bg-emerald-500/15 text-emerald-400", title: "Lead Capture", desc: "Automatically asks for name and phone number at the right moment. Every lead goes straight to your inbox." },
-              { icon: Fingerprint, color: "bg-purple-500/15 text-purple-400", title: "Remembers Customers", desc: "AI recalls returning visitors, past preferences, and previous conversations for a personal experience." },
-              { icon: Languages, color: "bg-blue-500/15 text-blue-400", title: "Multi-Language", desc: "Replies in English, Arabic, Spanish, French, and more — automatically detects the visitor's language." },
-              { icon: Globe, color: "bg-amber-500/15 text-amber-400", title: "Learns Your Business", desc: "Paste your website URL. Redber reads and absorbs your menus, services, prices, and FAQs instantly." },
-              { icon: Zap, color: "bg-teal-500/15 text-teal-400", title: "Instant Responses", desc: "Under 3 seconds. No hold music. No 'your call is important to us'. Real answers, immediately." },
-              { icon: TrendingUp, color: "bg-pink-500/15 text-pink-400", title: "Upsell Suggestions", desc: "AI proactively suggests add-ons, upgrades, and related services to increase average order value." },
-              { icon: ShieldCheck, color: "bg-gray-500/15 text-gray-400", title: "Smart Guardrails", desc: "Set topics to avoid, compliance rules, and out-of-scope responses. Stays on-brand, always." },
-            ].map((f, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 16 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.05 }}
-                className="bg-white/[0.03] border border-white/8 rounded-2xl p-6 hover:bg-white/[0.06] hover:border-white/15 transition-all group"
-              >
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-4 ${f.color}`}>
-                  <f.icon size={20} />
-                </div>
-                <h3 className="text-base font-bold text-white mb-2">{f.title}</h3>
-                <p className="text-sm text-gray-400 leading-relaxed">{f.desc}</p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ═══════════════════════════════════════
-          LIVE DEMO
-      ═══════════════════════════════════════ */}
-      <section id="demo" className="relative py-32 px-6 bg-black/40 border-t border-white/5">
-        <div className="max-w-6xl mx-auto">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-center mb-16"
-          >
-            <p className="text-xs font-bold uppercase tracking-widest text-emerald-400 mb-3">Live Examples</p>
-            <h2 className="text-4xl md:text-5xl font-black mb-4">See live AI receptionists</h2>
-            <p className="text-gray-400 text-lg max-w-2xl mx-auto">These are real bots built on Redber. Try asking a question — they answer just like a trained receptionist would.</p>
-          </motion.div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 justify-items-center">
-            {loading ? (
-              <div className="col-span-full py-20 flex justify-center text-gray-400">Loading receptionists...</div>
-            ) : bots.filter(b => b.status === "Active" && b.id !== "redber-assistant-001").length === 0 ? (
-              <div className="col-span-full text-center p-12 bg-white/5 border border-white/10 rounded-2xl">
-                <Bot className="w-12 h-12 text-gray-500 mx-auto mb-4" />
-                <p className="text-xl font-bold text-white mb-2">No Live Bots Yet</p>
-                <p className="text-gray-400">Create your first AI receptionist in the admin panel.</p>
               </div>
-            ) : (
-              bots.filter(b => b.status === "Active" && b.id !== "redber-assistant-001").map((bot, idx) => (
-                <motion.div
-                  key={bot.id}
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  whileInView={{ opacity: 1, scale: 1 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: idx * 0.1 }}
-                  className="w-full bg-[#0A0A0E] border border-white/10 rounded-[2rem] p-6 hover:border-indigo-500/30 transition-colors group flex flex-col min-h-[480px]"
-                >
-                  <div className="flex items-center gap-4 mb-5">
-                    {bot.avatar ? (
-                      <img src={bot.avatar} alt={bot.name} className="w-12 h-12 rounded-full object-cover border border-white/10" />
-                    ) : (
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg ${bot.theme_color || 'bg-gradient-to-tr from-indigo-600 to-purple-600'}`}>
-                        {bot.name.charAt(0)}
-                      </div>
-                    )}
-                    <div>
-                      <h3 className="text-lg font-black text-white">{bot.name}</h3>
-                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                        {bot.role} {bot.persona_config?.industry ? `· ${bot.persona_config.industry}` : ''}
-                      </p>
-                    </div>
-                    <div className="ml-auto flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-xs text-emerald-400 font-semibold">Online</span>
-                    </div>
-                  </div>
 
-                  <div className="flex-1 bg-black/50 border border-white/5 rounded-2xl p-4 flex flex-col space-y-3 mb-5">
-                    <div className="bg-white/8 text-gray-200 text-sm p-3 rounded-xl rounded-tl-none w-[88%]">
-                      Hi! I&apos;m {bot.name}. How can I help you today?
-                    </div>
-                    {bot.role?.toLowerCase().includes('restaurant') || bot.persona_config?.industry?.toLowerCase().includes('restaurant') || bot.persona_config?.industry?.toLowerCase().includes('cafe') ? (
-                      <>
-                        <div className="bg-indigo-600 text-white text-sm p-3 rounded-xl rounded-tr-none w-[78%] self-end">Do you have vegan options?</div>
-                        <div className="bg-white/8 text-gray-200 text-sm p-3 rounded-xl rounded-tl-none w-[92%] leading-relaxed">Yes! 🌱 We have a dedicated vegan menu with plant-based burgers, salads, and desserts. Want me to help you make a reservation?</div>
-                      </>
-                    ) : bot.persona_config?.industry?.toLowerCase().includes('auto') || bot.persona_config?.industry?.toLowerCase().includes('car') ? (
-                      <>
-                        <div className="bg-indigo-600 text-white text-sm p-3 rounded-xl rounded-tr-none w-[78%] self-end">Can I book a test drive?</div>
-                        <div className="bg-white/8 text-gray-200 text-sm p-3 rounded-xl rounded-tl-none w-[92%] leading-relaxed">Absolutely! 🚗 I can book that for you right now. What day works best, and which model are you interested in?</div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="bg-indigo-600 text-white text-sm p-3 rounded-xl rounded-tr-none w-[78%] self-end">What are your opening hours?</div>
-                        <div className="bg-white/8 text-gray-200 text-sm p-3 rounded-xl rounded-tl-none w-[92%] leading-relaxed">We&apos;re open Monday to Saturday, 9am – 6pm. I can also book an appointment for you right now if you&apos;d like!</div>
-                      </>
-                    )}
-                  </div>
-
-                  <Link href={`/chat/${bot.name.toLowerCase()}`} className="mt-auto w-full py-3.5 rounded-xl bg-white text-black hover:bg-gray-100 font-bold flex justify-center items-center gap-2 transition-all text-sm">
-                    Chat with {bot.name} <ArrowRight size={15} />
-                  </Link>
-                </motion.div>
-              ))
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* ═══════════════════════════════════════
-          TESTIMONIALS
-      ═══════════════════════════════════════ */}
-      <section className="relative py-32 px-6 bg-[#020202] border-t border-white/5">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-16">
-            <p className="text-xs font-bold uppercase tracking-widest text-amber-400 mb-3">Social Proof</p>
-            <h2 className="text-4xl md:text-5xl font-black mb-4">Business owners love it</h2>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {[
-              { quote: "We used to miss 20+ customer calls a day after hours. Now Redber handles them all and sends us the leads in the morning. It paid for itself in week one.", author: "Sarah M.", role: "Restaurant Owner", stars: 5 },
-              { quote: "Our dealership gets test drive bookings 24/7 now. Customers book at midnight, we confirm in the morning. It's like having a receptionist that never goes home.", author: "James K.", role: "Sales Manager, AutoHub", stars: 5 },
-              { quote: "I set it up in 30 minutes. Now patients get answers to their questions even on weekends, and our Monday call volume dropped by 40%.", author: "Dr. Priya N.", role: "Clinic Director", stars: 5 },
-            ].map((t, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.1 }}
-                className="bg-white/[0.03] border border-white/8 p-8 rounded-3xl"
-              >
-                <div className="flex gap-0.5 mb-5">
-                  {[1, 2, 3, 4, 5].map(s => <Star key={s} size={14} className="text-amber-400 fill-amber-400" />)}
+              {/* Right: Links */}
+              <div className="footer-links footer-grid-links">
+                <div>
+                  <h4>Product</h4>
+                  <ul>
+                    <li><Link href="#how-it-works">How It Works</Link></li>
+                    <li><Link href="#features">Features</Link></li>
+                    <li><Link href="#pricing">Pricing</Link></li>
+                    <li><Link href="#demo">Live Demo</Link></li>
+                    <li><Link href="#faq">FAQ</Link></li>
+                  </ul>
                 </div>
-                <p className="text-gray-200 text-base leading-relaxed mb-6">&ldquo;{t.quote}&rdquo;</p>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center font-bold text-white text-sm">
-                    {t.author.charAt(0)}
-                  </div>
-                  <div>
-                    <p className="font-bold text-white text-sm">{t.author}</p>
-                    <p className="text-xs text-gray-500">{t.role}</p>
-                  </div>
+                <div>
+                  <h4>Company</h4>
+                  <ul>
+                    <li><Link href="/about">About Us</Link></li>
+                    <li><Link href="/blog">Blog</Link></li>
+                    <li><Link href="/careers">Careers</Link></li>
+                    <li><Link href="/contact">Contact</Link></li>
+                  </ul>
                 </div>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ═══════════════════════════════════════
-          PRICING
-      ═══════════════════════════════════════ */}
-      <section id="pricing" className="relative py-32 px-6 bg-[#040404] border-t border-white/5">
-        <div className="max-w-6xl mx-auto">
-
-          {/* Section header */}
-          <div className="text-center mb-10">
-            <p className="text-xs font-bold uppercase tracking-widest text-indigo-400 mb-3">Pricing</p>
-            <h2 className="text-4xl md:text-5xl font-black mb-4">Simple, transparent plans</h2>
-            <p className="text-gray-400 text-lg max-w-xl mx-auto">One-time payment. No monthly fees. No hidden charges.</p>
-          </div>
-
-          {/* India-only pricing */}
-          <IndiaPricing />
-        </div>
-      </section>
-
-      {/* ═══════════════════════════════════════
-          FAQ
-      ═══════════════════════════════════════ */}
-      <section className="relative py-32 px-6 bg-[#020202] border-t border-white/5">
-        <div className="max-w-3xl mx-auto">
-          <div className="text-center mb-16">
-            <p className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-3">FAQ</p>
-            <h2 className="text-4xl font-black">Common questions</h2>
-          </div>
-          <div className="space-y-3">
-            {[
-              { q: "Do I need to know how to code?", a: "Not at all. You enter your website URL, Redber reads and learns it automatically, then gives you a shareable chat link. Setup takes about 15 minutes." },
-              { q: "What if a customer asks something Redber doesn't know?", a: "Redber politely says it doesn't have that information and offers to connect the customer with your team. It never makes things up." },
-              { q: "Can it actually book appointments?", a: "Yes. Redber captures the customer's preferred date, time, name, and phone number — and sends it directly to your lead inbox. You just confirm." },
-              { q: "Does it work after hours and on weekends?", a: "That's the whole point. Redber works 24/7, 365 days a year. It answers at 3am on Christmas Day just as fluently as on a Monday morning." },
-              { q: "Can I train it with my own menu, services, or pricing?", a: "Absolutely. Paste your website URL, upload a PDF, or type content manually. Redber absorbs it all and answers questions about it precisely." },
-              { q: "How is this different from a regular chatbot?", a: "Old chatbots give scripted answers from a fixed list. Redber reads your actual business content and has real AI conversations. It understands context, remembers what was said, and adapts to each customer." },
-            ].map((faq, i) => (
-              <div
-                key={i}
-                className="bg-white/[0.03] border border-white/8 rounded-2xl overflow-hidden cursor-pointer group"
-                onClick={() => setOpenFaq(openFaq === i ? null : i)}
-              >
-                <div className="flex items-center justify-between px-6 py-5">
-                  <h4 className="text-base font-bold text-white group-hover:text-indigo-300 transition-colors pr-4">{faq.q}</h4>
-                  <ChevronDown size={18} className={`text-gray-400 shrink-0 transition-transform duration-300 ${openFaq === i ? "rotate-180 text-indigo-400" : ""}`} />
+                <div>
+                  <h4>Legal</h4>
+                  <ul>
+                    <li><Link href="/privacy-policy">Privacy Policy</Link></li>
+                    <li><Link href="/terms-of-service">Terms of Service</Link></li>
+                    <li><Link href="/cookies">Cookie Policy</Link></li>
+                  </ul>
                 </div>
-                {openFaq === i && (
-                  <div className="px-6 pb-5">
-                    <p className="text-gray-400 leading-relaxed text-sm">{faq.a}</p>
-                  </div>
-                )}
               </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ═══════════════════════════════════════
-          FINAL CTA
-      ═══════════════════════════════════════ */}
-      <section className="py-32 px-6 border-t border-white/5 relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/20 via-transparent to-purple-900/20 pointer-events-none" />
-        <div className="max-w-3xl mx-auto text-center relative z-10">
-          <p className="text-5xl mb-6">🤖</p>
-          <h2 className="text-4xl md:text-6xl font-black mb-6 leading-tight">
-            Your receptionist is standing by.
-          </h2>
-          <p className="text-gray-400 text-lg mb-10 max-w-xl mx-auto">
-            Stop losing customers after hours. Set up your AI receptionist in 15 minutes — no credit card required.
-          </p>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link href="/contact" className="flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white px-10 py-5 rounded-full font-bold text-lg shadow-[0_0_40px_rgba(99,102,241,0.3)] hover:shadow-[0_0_60px_rgba(99,102,241,0.5)] transition-all duration-300">
-              Get Started Free <ArrowRight size={20} />
-            </Link>
-            <a href="#demo" className="text-gray-400 hover:text-white text-sm font-medium transition-colors underline underline-offset-4">
-              See a live demo first
-            </a>
-          </div>
-          <p className="mt-6 text-xs text-gray-600">No credit card. No engineers. Setup in 15 minutes.</p>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="border-t border-white/5 bg-[#020202]">
-        <div className="max-w-7xl mx-auto px-6 py-14 flex flex-col md:flex-row justify-between items-center gap-8">
-          <div className="flex flex-col items-center md:items-start">
-            <div className="flex items-center gap-2 mb-2">
-              <img src="/redber_logo_transperent.png" alt="Redber" className="h-6 w-auto object-contain" />
             </div>
-            <p className="text-gray-600 text-sm">AI Receptionist for Businesses.</p>
-            <div className="flex items-center gap-4 mt-4">
-              <a href="https://www.instagram.com/redber.ai/?hl=en" target="_blank" rel="noopener noreferrer" className="text-gray-500 hover:text-white transition-colors">
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path fillRule="evenodd" d="M12.315 2c2.43 0 2.784.013 3.808.06 1.064.049 1.791.218 2.427.465a4.902 4.902 0 011.772 1.153 4.902 4.902 0 011.153 1.772c.247.636.416 1.363.465 2.427.048 1.067.06 1.407.06 4.123v.08c0 2.643-.012 2.987-.06 4.043-.049 1.064-.218 1.791-.465 2.427a4.902 4.902 0 01-1.153 1.772 4.902 4.902 0 01-1.772 1.153c-.636.247-1.363.416-2.427.465-1.067.048-1.407.06-4.123.06h-.08c-2.643 0-2.987-.012-4.043-.06-1.064-.049-1.791-.218-2.427-.465a4.902 4.902 0 01-1.772-1.153 4.902 4.902 0 01-1.153-1.772c-.247-.636-.416-1.363-.465-2.427-.047-1.024-.06-1.379-.06-3.808v-.63c0-2.43.013-2.784.06-3.808.049-1.064.218-1.791.465-2.427a4.902 4.902 0 011.153-1.772A4.902 4.902 0 015.45 2.525c.636-.247 1.363-.416 2.427-.465C8.901 2.013 9.256 2 11.685 2h.63zm-.081 1.802h-.468c-2.456 0-2.784.011-3.807.058-.975.045-1.504.207-1.857.344-.467.182-.8.398-1.15.748-.35.35-.566.683-.748 1.15-.137.353-.3.882-.344 1.857-.047 1.023-.058 1.351-.058 3.807v.468c0 2.456.011 2.784.058 3.807.045.975.207 1.504.344 1.857.182.466.399.8.748 1.15.35.35.683.566 1.15.748.353.137.882.3 1.857.344 1.054.048 1.37.058 4.041.058h.08c2.597 0 2.917-.01 3.96-.058.976-.045 1.505-.207 1.858-.344.466-.182.8-.398 1.15-.748.35-.35.566-.683.748-1.15.137-.353.3-.882.344-1.857.048-1.055.058-1.37.058-4.041v-.08c0-2.597-.01-2.917-.058-3.96-.045-.976-.207-1.505-.344-1.858a3.097 3.097 0 00-.748-1.15 3.098 3.098 0 00-1.15-.748c-.353-.137-.882-.3-1.857-.344-1.023-.047-1.351-.058-3.807-.058zM12 6.865a5.135 5.135 0 110 10.27 5.135 5.135 0 010-10.27zm0 1.802a3.333 3.333 0 100 6.666 3.333 3.333 0 000-6.666zm5.338-3.205a1.2 1.2 0 110 2.4 1.2 1.2 0 010-2.4z" clipRule="evenodd" />
-                </svg>
-              </a>
-              <a href="https://www.facebook.com/profile.php?id=61579462559461" target="_blank" rel="noopener noreferrer" className="text-gray-500 hover:text-white transition-colors">
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path fillRule="evenodd" d="M22 12c0-5.523-4.477-10-10-10S2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.878v-6.987h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.988C18.343 21.128 22 16.991 22 12z" clipRule="evenodd" />
-                </svg>
-              </a>
+
+            {/* Stats row */}
+            <div className="footer-stats-row">
+              {[{n:"0.25s",l:"Avg Response Time"},{n:"24/7",l:"Always Online"},{n:"∞",l:"Concurrent Calls"},{n:"< 1 min",l:"Setup Time"}].map(({n,l}) => (
+                <div key={l}>
+                  <div style={{ fontSize: "2rem", fontWeight: 900, color: "#C6F432", letterSpacing: "-0.02em" }}>{n}</div>
+                  <div style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.35)", fontWeight: 600, marginTop: "0.2rem" }}>{l}</div>
+                </div>
+              ))}
+              <div style={{ marginLeft: "auto", display: "flex", gap: "0.75rem", alignItems: "center" }}>
+                {[
+                  { icon: <Facebook size={18} />, href: "#", label: "Facebook" }
+                ].map((item, i) => (
+                  <a key={i} href={item.href} aria-label={item.label} style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.5)", textDecoration: "none", transition: "all 0.2s" }}
+                     onMouseOver={(e) => { e.currentTarget.style.color = "#C6F432"; e.currentTarget.style.borderColor = "rgba(198,244,50,0.3)"; }}
+                     onMouseOut={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.5)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; }}
+                  >
+                    {item.icon}
+                  </a>
+                ))}
+              </div>
             </div>
           </div>
-          <div className="flex flex-wrap justify-center md:justify-end items-center gap-6 text-sm text-gray-500">
-            <a href="#how-it-works" className="hover:text-white transition-colors">How It Works</a>
-            <a href="#industries" className="hover:text-white transition-colors">Industries</a>
-            <a href="#demo" className="hover:text-white transition-colors">Live Demo</a>
-            <Link href="/contact" className="hover:text-white transition-colors">Contact</Link>
-            <Link href="/privacy-policy" className="hover:text-white transition-colors md:ml-4 md:border-l border-white/10 md:pl-4">Privacy</Link>
-            <Link href="/terms-of-service" className="hover:text-white transition-colors">Terms</Link>
+        </div>
+
+        {/* Bottom bar */}
+        <div className="footer-bottom">
+          <div className="inner" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", flexWrap: "wrap", gap: "1rem" }}>
+            <img src="/logo/Redber Logo white.svg" alt="Redber" style={{ height: "auto", width: 100 }}
+              onError={(e) => { (e.target as HTMLImageElement).src = "/logo/Redber Logo Black.svg"; (e.target as HTMLImageElement).style.filter = "invert(1)"; }}
+            />
+            <span style={{ color: "rgba(255,255,255,0.25)", fontSize: "0.82rem", fontWeight: 600 }}>© 2026 Redber AI · Built by <a href="https://acenzos.com" style={{ color: "#C6F432", textDecoration: "none" }}>Acenzos</a></span>
+            <div style={{ display: "flex", gap: "1.5rem" }}>
+              <Link href="/privacy-policy" style={{ color: "rgba(255,255,255,0.25)", fontSize: "0.82rem", textDecoration: "none", fontWeight: 600 }}>Privacy</Link>
+              <Link href="/terms-of-service" style={{ color: "rgba(255,255,255,0.25)", fontSize: "0.82rem", textDecoration: "none", fontWeight: 600 }}>Terms</Link>
+              <Link href="/cookies" style={{ color: "rgba(255,255,255,0.25)", fontSize: "0.82rem", textDecoration: "none", fontWeight: 600 }}>Cookies</Link>
+            </div>
           </div>
         </div>
       </footer>
-
       <RedberMascot />
-    </div>
+    </>
   );
 }

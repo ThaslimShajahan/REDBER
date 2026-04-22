@@ -170,52 +170,70 @@ interface ChatbotProps {
 // ─── Call status type ─────────────────────────────────────────────────────────
 type CallStatus = "idle" | "connecting" | "listening" | "thinking" | "speaking";
 
-// ─── Audio chunk queue player ─────────────────────────────────────────────────
-class AudioQueue {
+// ─── PCM16 player — plays raw Int16 PCM at 24 kHz from OpenAI Realtime ───────
+class PCM16Player {
     private ctx: AudioContext;
     private nextStart = 0;
-    private pendingBuffers = 0;
-    /** Called once when all audio that has been enqueued finishes playing */
+    private pending = 0;
+    // Only fire onAllDone once the server signals the response is complete AND
+    // all enqueued audio has finished playing. This prevents premature "done"
+    // from brief gaps between small PCM chunks mid-stream.
+    private streamDone = false;
     public onAllDone?: () => void;
 
     constructor() {
+        // Use browser's native rate — forcing 24000Hz is unreliable across browsers.
+        // AudioBuffer is still declared at 24000Hz so the browser auto-resamples cleanly.
         this.ctx = new AudioContext();
     }
 
-    async enqueue(arrayBuffer: ArrayBuffer) {
-        // Resume context if suspended (browser autoplay policy)
-        if (this.ctx.state === "suspended") await this.ctx.resume();
-
-        this.pendingBuffers++;
-        try {
-            const decoded = await this.ctx.decodeAudioData(arrayBuffer.slice(0));
-            const source = this.ctx.createBufferSource();
-            source.buffer = decoded;
-            source.connect(this.ctx.destination);
-            const startAt = Math.max(this.ctx.currentTime, this.nextStart);
-            source.start(startAt);
-            this.nextStart = startAt + decoded.duration;
-            source.onended = () => {
-                this.pendingBuffers--;
-                if (this.pendingBuffers === 0 && this.onAllDone) {
-                    this.onAllDone();
-                }
-            };
-        } catch (e) {
-            this.pendingBuffers--;
-            console.warn("AudioQueue decode error", e);
-            if (this.pendingBuffers === 0 && this.onAllDone) {
+    enqueue(pcm16: ArrayBuffer) {
+        if (this.ctx.state === "suspended") this.ctx.resume();
+        const int16 = new Int16Array(pcm16);
+        const f32 = new Float32Array(int16.length);
+        for (let i = 0; i < int16.length; i++) f32[i] = int16[i] / 32768;
+        // Buffer declared at 24000Hz; context resamples to native rate automatically
+        const buf = this.ctx.createBuffer(1, f32.length, 24000);
+        buf.copyToChannel(f32, 0);
+        const src = this.ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(this.ctx.destination);
+        const startAt = Math.max(this.ctx.currentTime, this.nextStart);
+        src.start(startAt);
+        this.nextStart = startAt + buf.duration;
+        this.pending++;
+        src.onended = () => {
+            this.pending--;
+            if (this.pending === 0 && this.streamDone && this.onAllDone) {
+                this.streamDone = false;
                 this.onAllDone();
             }
+        };
+    }
+
+    /** Call when the server sends bot_complete — fires onAllDone once all audio is played. */
+    markStreamComplete() {
+        this.streamDone = true;
+        if (this.pending === 0 && this.onAllDone) {
+            this.streamDone = false;
+            this.onAllDone();
         }
     }
 
-    reset() {
-        this.pendingBuffers = 0;
-        this.nextStart = 0;
-        this.onAllDone = undefined;
+    interrupt() {
         try { this.ctx.close(); } catch (_) {}
         this.ctx = new AudioContext();
+        this.nextStart = 0;
+        this.pending = 0;
+        this.streamDone = false;
+    }
+
+    reset() {
+        try { this.ctx.close(); } catch (_) {}
+        this.pending = 0;
+        this.nextStart = 0;
+        this.streamDone = false;
+        this.onAllDone = undefined;
     }
 }
 
@@ -277,9 +295,11 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
     const fileInputRef = useRef<HTMLInputElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const wsRef = useRef<WebSocket | null>(null);
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const captureCtxRef = useRef<AudioContext | null>(null);
+    const workletNodeRef = useRef<AudioWorkletNode | ScriptProcessorNode | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
-    const audioQueueRef = useRef<AudioQueue | null>(null);
+    const audioPlayerRef = useRef<PCM16Player | null>(null);
+    const isBotSpeakingRef = useRef(false);   // gates mic → WS while bot audio plays
     const isCallModeRef = useRef(false);
     const callStatusRef = useRef<CallStatus>("idle");
 
@@ -306,64 +326,99 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
         // Get microphone
         let stream: MediaStream;
         try {
-            stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,   // prevents bot speaker audio looping back into mic
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                },
+                video: false,
+            });
             streamRef.current = stream;
-        } catch (err) {
+        } catch {
             alert("Microphone access denied. Please allow microphone access to use the AI Call feature.");
             setIsCallMode(false);
             setCallStatus("idle");
             return;
         }
 
-        // Init audio queue
-        audioQueueRef.current = new AudioQueue();
+        // Init PCM16 player (plays audio received from OpenAI Realtime at 24 kHz)
+        const player = new PCM16Player();
+        audioPlayerRef.current = player;
+        player.onAllDone = () => {
+            isBotSpeakingRef.current = false;   // unmute mic — bot finished, user's turn
+            if (isCallModeRef.current) setCallStatusSafe("listening");
+        };
 
-        // Open WebSocket to backend
+        // Open WebSocket to backend relay
         const wsUrl = `${WS_BASE}/api/bots/ws/call/${botId}?session_id=${sessionId}`;
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
         ws.binaryType = "arraybuffer";
 
-        ws.onopen = () => {
-            setCallStatus("listening");
+        ws.onopen = async () => {
+            // Start mic capture — try AudioWorklet first, fall back to ScriptProcessorNode
+            const captureCtx = new AudioContext();
+            captureCtxRef.current = captureCtx;
+            const source = captureCtx.createMediaStreamSource(stream);
 
-            // Start streaming mic audio via MediaRecorder → WS
-            // webm/opus is natively supported for Deepgram streaming
-            const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-                ? "audio/webm;codecs=opus"
-                : "audio/webm";
-
-            const recorder = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 16000 });
-            mediaRecorderRef.current = recorder;
-
-            recorder.ondataavailable = (e) => {
-                if (e.data.size > 0 && ws.readyState === WebSocket.OPEN) {
-                    ws.send(e.data);
-                }
-            };
-
-            // Send 250ms chunks — good latency/overhead tradeoff for Deepgram
-            recorder.start(250);
+            // Inline worklet: Float32 mic → Int16 PCM at 24 kHz, sent as binary WS frames
+            const workletCode = `class P extends AudioWorkletProcessor{process(inputs){const ch=inputs[0]?.[0];if(!ch)return true;const r=sampleRate/24000,n=Math.floor(ch.length/r),o=new Int16Array(n);for(let i=0;i<n;i++){const s=Math.max(-1,Math.min(1,ch[Math.floor(i*r)]));o[i]=s<0?s*32768:s*32767;}this.port.postMessage(o.buffer,[o.buffer]);return true;}}registerProcessor('pcm16-proc',P);`;
+            const blobUrl = URL.createObjectURL(new Blob([workletCode], { type: "application/javascript" }));
+            try {
+                await captureCtx.audioWorklet.addModule(blobUrl);
+                URL.revokeObjectURL(blobUrl);
+                const node = new AudioWorkletNode(captureCtx, "pcm16-proc");
+                workletNodeRef.current = node;
+                node.port.onmessage = (e) => {
+                    // Mute mic while bot is playing — prevents coughs/noise from triggering barge-in
+                    if (!isBotSpeakingRef.current && ws.readyState === WebSocket.OPEN) ws.send(e.data);
+                };
+                source.connect(node);
+            } catch {
+                // ScriptProcessorNode fallback (deprecated but widely supported)
+                URL.revokeObjectURL(blobUrl);
+                const spn = captureCtx.createScriptProcessor(4096, 1, 1);
+                workletNodeRef.current = spn;
+                spn.onaudioprocess = (e) => {
+                    if (isBotSpeakingRef.current || ws.readyState !== WebSocket.OPEN) return;
+                    const f32 = e.inputBuffer.getChannelData(0);
+                    const ratio = captureCtx.sampleRate / 24000;
+                    const out = new Int16Array(Math.floor(f32.length / ratio));
+                    for (let i = 0; i < out.length; i++) {
+                        const s = Math.max(-1, Math.min(1, f32[Math.floor(i * ratio)]));
+                        out[i] = s < 0 ? s * 32768 : s * 32767;
+                    }
+                    ws.send(out.buffer);
+                };
+                source.connect(spn);
+                spn.connect(captureCtx.destination);
+            }
         };
 
-        // Set up audio queue done callback — fires after ALL audio for one turn plays
-        if (audioQueueRef.current) {
-            audioQueueRef.current.onAllDone = () => {
-                if (isCallModeRef.current) setCallStatusSafe("listening");
-            };
-        }
-
-        ws.onmessage = async (event) => {
-            // Binary = TTS audio chunk from backend
+        ws.onmessage = (event) => {
+            // Binary = raw PCM16 audio from OpenAI Realtime
             if (event.data instanceof ArrayBuffer) {
+                isBotSpeakingRef.current = true;   // mute mic until playback finishes
                 if (callStatusRef.current !== "speaking") setCallStatusSafe("speaking");
-                audioQueueRef.current?.enqueue(event.data);
+                audioPlayerRef.current?.enqueue(event.data);
                 return;
             }
 
-            // Text = JSON control message from backend
+            // Text = JSON control message
             try {
                 const msg = JSON.parse(event.data as string);
+
+                if (msg.type === "session_ready") {
+                    setCallStatusSafe("listening");
+                }
+
+                if (msg.type === "speech_started") {
+                    // Only reached if mic gate was somehow open — clean up gracefully
+                    isBotSpeakingRef.current = false;
+                    audioPlayerRef.current?.interrupt();
+                    if (isCallModeRef.current) setCallStatusSafe("listening");
+                }
 
                 if (msg.type === "transcript" && msg.text) {
                     setLiveTranscript(msg.text);
@@ -386,10 +441,9 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
                 }
 
                 if (msg.type === "bot_complete") {
-                    // If no audio came (edge case), reset to listening
-                    if (callStatusRef.current === "thinking") {
-                        if (isCallModeRef.current) setCallStatusSafe("listening");
-                    }
+                    // Signal the player that no more audio chunks are coming.
+                    // onAllDone fires once the last chunk finishes playing → back to listening.
+                    audioPlayerRef.current?.markStreamComplete();
                 }
 
                 if (msg.type === "error") {
@@ -403,22 +457,22 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
         };
 
         ws.onclose = () => {
-            if (isCallModeRef.current) {
-                // Unexpected close — clean up
-                endCall(false);
-            }
+            if (isCallModeRef.current) endCall(false);
         };
     }, [botId, sessionId, setCallStatusSafe]);
 
     const endCall = useCallback((stopWs = true) => {
         isCallModeRef.current = false;
+        isBotSpeakingRef.current = false;
         setIsCallMode(false);
         setCallStatusSafe("idle");
         setLiveTranscript("");
 
-        // Stop recorder
-        try { mediaRecorderRef.current?.stop(); } catch (_) {}
-        mediaRecorderRef.current = null;
+        // Disconnect capture worklet and close capture context
+        try { workletNodeRef.current?.disconnect(); } catch (_) {}
+        workletNodeRef.current = null;
+        try { captureCtxRef.current?.close(); } catch (_) {}
+        captureCtxRef.current = null;
 
         // Stop mic stream
         streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -430,9 +484,9 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
         }
         wsRef.current = null;
 
-        // Reset audio queue
-        audioQueueRef.current?.reset();
-        audioQueueRef.current = null;
+        // Reset PCM16 player
+        audioPlayerRef.current?.reset();
+        audioPlayerRef.current = null;
     }, [setCallStatusSafe]);
 
     const toggleCall = useCallback(() => {
@@ -452,6 +506,10 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
         reader.readAsDataURL(file);
     };
 
+    // Strip AI signal tags that sometimes leak into streamed text before the final "done" event
+    const stripSignalTags = (text: string) =>
+        text.replace(/\[FORMAT:.*?\]/g, "").replace(/\[CONFIDENCE:.*?\]/g, "").replace(/\[GAP:.*?\]/g, "").trimEnd();
+
     const handleSend = async (overrideText?: string) => {
         const textToSend = overrideText !== undefined ? overrideText : input;
         if (!textToSend.trim() && !imagePreview) return;
@@ -467,8 +525,11 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
         }
         setIsLoading(true);
 
+        const streamingId = `stream-${Date.now()}`;
+        let streamStarted = false;
+
         try {
-            const response = await fetch(`${API_BASE}/api/bots/chat`, {
+            const response = await fetch(`${API_BASE}/api/bots/chat/stream`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -480,18 +541,70 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
                 }),
             });
 
-            if (response.ok) {
-                const data = await response.json();
-                setMessages((prev) => [...prev, { id: Date.now().toString(), sender: "bot", text: data.reply, formatType: data.format_type }]);
-            } else {
-                setMessages((prev) => [...prev, { id: Date.now().toString(), sender: "bot", text: "Sorry, I am having trouble connecting to my brain." }]);
+            if (!response.ok || !response.body) throw new Error("Stream request failed");
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split("\n");
+                buffer = lines.pop() ?? ""; // keep any incomplete line
+
+                for (const line of lines) {
+                    if (!line.startsWith("data: ")) continue;
+                    try {
+                        const event = JSON.parse(line.slice(6));
+
+                        if (event.type === "token" && event.content) {
+                            if (!streamStarted) {
+                                // First token — show the bot bubble, hide loading dots
+                                streamStarted = true;
+                                setIsLoading(false);
+                                setMessages((prev) => [...prev, { id: streamingId, sender: "bot", text: event.content }]);
+                            } else {
+                                setMessages((prev) =>
+                                    prev.map((m) =>
+                                        m.id === streamingId
+                                            ? { ...m, text: stripSignalTags(m.text + event.content) }
+                                            : m
+                                    )
+                                );
+                            }
+                        } else if (event.type === "done") {
+                            // Replace streamed draft with the clean, formatted final reply
+                            setMessages((prev) =>
+                                prev.map((m) =>
+                                    m.id === streamingId
+                                        ? { ...m, text: event.reply, formatType: event.format_type }
+                                        : m
+                                )
+                            );
+                        }
+                    } catch {
+                        // Malformed SSE line — skip
+                    }
+                }
+            }
+
+            if (!streamStarted) {
+                // Stream ended with no tokens (e.g. rate-limited "done" sent directly)
+                setMessages((prev) => [...prev, { id: streamingId, sender: "bot", text: "Sorry, I am having trouble connecting to my brain." }]);
             }
         } catch {
-            if (typeof navigator !== "undefined" && !navigator.onLine) {
-                 setMessages((prev) => [...prev, { id: Date.now().toString(), sender: "bot", text: "Network connection is down. Please check your internet connection." }]);
-            } else {
-                 setMessages((prev) => [...prev, { id: Date.now().toString(), sender: "bot", text: "Network error occurred." }]);
-            }
+            const errorText =
+                typeof navigator !== "undefined" && !navigator.onLine
+                    ? "Network connection is down. Please check your internet connection."
+                    : "Sorry, I am having trouble connecting to my brain.";
+            setMessages((prev) => {
+                const hasPlaceholder = prev.some((m) => m.id === streamingId);
+                if (hasPlaceholder) return prev.map((m) => (m.id === streamingId ? { ...m, text: errorText } : m));
+                return [...prev, { id: streamingId, sender: "bot", text: errorText }];
+            });
         } finally {
             setIsLoading(false);
         }

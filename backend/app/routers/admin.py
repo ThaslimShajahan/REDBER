@@ -3,13 +3,34 @@ import re
 import tempfile
 import uuid
 import asyncio
+import logging
 from typing import Optional, List
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends
+from urllib.parse import urlparse
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends, Query
 from pydantic import BaseModel
 from ..rag.ingestion import extract_text_from_pdf, chunk_text
 from ..integrations.openai_client import generate_embedding
 from ..integrations.supabase_client import get_supabase_client
 from ..dependencies.auth import get_current_user, get_user_bots
+
+logger = logging.getLogger(__name__)
+
+
+def _validate_public_url(url: str) -> None:
+    """Reject non-http(s) and private/internal-network URLs (SSRF protection)."""
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid URL.")
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="Only http/https URLs are allowed.")
+    hostname = (parsed.hostname or "").lower()
+    blocked_prefixes = ("localhost", "127.", "0.", "10.", "192.168.", "172.16.", "172.17.",
+                        "172.18.", "172.19.", "172.20.", "172.21.", "172.22.", "172.23.",
+                        "172.24.", "172.25.", "172.26.", "172.27.", "172.28.", "172.29.",
+                        "172.30.", "172.31.", "169.254.", "::1", "fc00:", "fd")
+    if any(hostname == b.rstrip(".") or hostname.startswith(b) for b in blocked_prefixes):
+        raise HTTPException(status_code=400, detail="Internal network URLs are not allowed.")
 
 router = APIRouter(
     prefix="/api/admin",
@@ -104,7 +125,9 @@ class IngestUrlRequest(BaseModel):
 async def ingest_url(request: IngestUrlRequest):
     import httpx
     from bs4 import BeautifulSoup
-    
+
+    _validate_public_url(request.url)
+
     supabase = get_supabase_client()
     if not supabase:
         raise HTTPException(status_code=500, detail="Database credentials missing.")
@@ -271,12 +294,12 @@ async def _crawl_and_ingest(job_id: str, bot_id: str, start_url: str):
                             if norm not in seen and _is_internal(norm):
                                 seen.add(norm)
                                 queue.append(norm)
-                        print(f"[CRAWL] Sitemap {sitemap_path}: found {len(sitemap_urls)} URLs")
+                        logger.info("[CRAWL] Sitemap %s: found %d URLs", sitemap_path, len(sitemap_urls))
                         break
                 except Exception:
                     pass
     except Exception as e:
-        print(f"[CRAWL] Sitemap fetch failed: {e}")
+        logger.warning("[CRAWL] Sitemap fetch failed: %s", e)
     
     # BFS link discovery (fetch pages to find child links)
     discovery_visited: set[str] = set()
@@ -312,13 +335,13 @@ async def _crawl_and_ingest(job_id: str, bot_id: str, start_url: str):
                         discovery_queue.append(full)
                         
             except Exception as e:
-                print(f"[CRAWL:DISCOVER] {url}: {e}")
+                logger.warning("[CRAWL:DISCOVER] %s: %s", url, e)
                 continue
     
     # Deduplicate and cap
     all_urls = list(dict.fromkeys(all_urls))[:MAX_PAGES]
     
-    print(f"[CRAWL] Discovery complete. Found {len(all_urls)} unique URLs to crawl.")
+    logger.info("[CRAWL] Discovery complete. Found %d unique URLs to crawl.", len(all_urls))
     
     # Store the full URL list with pending status
     page_statuses = {url: "pending" for url in all_urls}
@@ -409,19 +432,20 @@ async def _crawl_and_ingest(job_id: str, bot_id: str, start_url: str):
                 await asyncio.sleep(0.3)
                 
             except Exception as e:
-                print(f"[CRAWL:INGEST] {url}: {e}")
+                logger.warning("[CRAWL:INGEST] %s: %s", url, e)
                 page_statuses[url] = f"failed:error"
                 _update_job(page_statuses=_json.dumps(page_statuses))
                 continue
     
     _update_job(status="done", pages_done=pages_done, chunks_inserted=total_chunks, page_statuses=_json.dumps(page_statuses))
-    print(f"[CRAWL] Done. {pages_done} pages ingested, {total_chunks} chunks total.")
+    logger.info("[CRAWL] Done. %d pages ingested, %d chunks total.", pages_done, total_chunks)
 
 
 
 @router.post("/kb/crawl_website")
 async def crawl_website(request: CrawlRequest, background_tasks: BackgroundTasks):
     """Start a full website crawl in background. Returns job_id to poll status."""
+    _validate_public_url(request.url)
     supabase = get_supabase_client()
     if not supabase:
         raise HTTPException(status_code=500, detail="Database credentials missing.")
@@ -437,7 +461,7 @@ async def crawl_website(request: CrawlRequest, background_tasks: BackgroundTasks
         }).execute()
     except Exception as e:
         # Table might not exist yet, proceed without job tracking
-        print(f"crawl_jobs table not found (create it): {e}")
+        logger.warning("crawl_jobs table not found (create it): %s", e)
     
     background_tasks.add_task(_crawl_and_ingest, job_id, request.bot_id, request.url)
     
@@ -517,12 +541,17 @@ async def delete_kb_item(item_id: str):
 
 
 @router.get("/leads")
-async def get_leads(bot_ids: Optional[str] = None, allowed_bots: Optional[List[str]] = Depends(get_user_bots)):
+async def get_leads(
+    bot_ids: Optional[str] = None,
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    allowed_bots: Optional[List[str]] = Depends(get_user_bots),
+):
     supabase = get_supabase_client()
     if not supabase:
         raise HTTPException(status_code=500, detail="Database credentials missing. Cannot fetch leads.")
-    
-    query = supabase.table("leads").select("*").order("created_at", desc=True).limit(200)
+
+    query = supabase.table("leads").select("*").order("created_at", desc=True).range(offset, offset + limit - 1)
     
     # Enforce tenant isolation
     target_ids = []
@@ -546,12 +575,17 @@ async def get_leads(bot_ids: Optional[str] = None, allowed_bots: Optional[List[s
 
 
 @router.get("/logs")
-async def get_logs(bot_ids: Optional[str] = None, allowed_bots: Optional[List[str]] = Depends(get_user_bots)):
+async def get_logs(
+    bot_ids: Optional[str] = None,
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    allowed_bots: Optional[List[str]] = Depends(get_user_bots),
+):
     supabase = get_supabase_client()
     if not supabase:
         raise HTTPException(status_code=500, detail="Database credentials missing.")
     try:
-        query = supabase.table("chat_logs").select("*").order("created_at", desc=True).limit(500)
+        query = supabase.table("chat_logs").select("*").order("created_at", desc=True).range(offset, offset + limit - 1)
         
         # Enforce tenant isolation
         target_ids = []
@@ -670,7 +704,7 @@ async def get_bots(bot_ids: Optional[str] = None, allowed_bots: Optional[List[st
         raise HTTPException(status_code=500, detail="Database credentials missing. Check your .env file.")
         
     try:
-        print(f"[ADMIN BOTS] Request for bot_ids: {bot_ids}, allowed_bots: {allowed_bots}")
+        logger.debug("[ADMIN BOTS] Request for bot_ids: %s, allowed_bots: %s", bot_ids, allowed_bots)
         query = supabase.table("bots").select("*")
         
         # Enforce tenant isolation
@@ -684,15 +718,15 @@ async def get_bots(bot_ids: Optional[str] = None, allowed_bots: Optional[List[st
         elif allowed_bots is not None:
             target_ids = allowed_bots
 
-        print(f"[ADMIN BOTS] target_ids: {target_ids}")
+        logger.debug("[ADMIN BOTS] target_ids: %s", target_ids)
         if target_ids:
             query = query.in_("id", target_ids)
         elif allowed_bots is not None:
-            print("[ADMIN BOTS] Not super admin and no target_ids, returning empty")
+            logger.debug("[ADMIN BOTS] Not super admin and no target_ids, returning empty")
             return []
 
         response = query.execute()
-        print(f"[ADMIN BOTS] Found {len(response.data or [])} bots in database")
+        logger.info("[ADMIN BOTS] Found %d bots in database", len(response.data or []))
         
         bots = []
         for bot in response.data:

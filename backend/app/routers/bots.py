@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
+from fastapi.responses import StreamingResponse
 from ..dependencies.auth import get_current_user
 import json
 import base64
@@ -91,10 +92,8 @@ async def chat(request: ChatRequest):
     from ..services.bot_service import BotService
     from ..services.rate_limiter import check_and_increment, get_bot_limits, get_friendly_block_message
 
-    # ── Fetch limits for this bot ──────────────────────────────────────────────
     try:
         limits = await get_bot_limits(request.bot_id)
-        
         if limits:
             allowed, reason, counts = await check_and_increment(request.bot_id, limits)
             if not allowed:
@@ -107,10 +106,8 @@ async def chat(request: ChatRequest):
                     format_type="default"
                 )
     except Exception as e:
-        # Never block on rate limit errors — fail open
         print(f"[RATE_LIMIT] Error checking limits: {e}")
 
-    # ── Normal processing ──────────────────────────────────────────────────────
     try:
         response = await BotService.process_chat(request)
         return response
@@ -121,6 +118,49 @@ async def chat(request: ChatRequest):
             lead_type="error",
             action_taken="none"
         )
+
+
+@router.post("/chat/stream")
+async def chat_stream(request: ChatRequest):
+    """
+    Streaming chat endpoint using Server-Sent Events (SSE).
+    Yields tokens as they arrive from OpenAI — first token in ~1-2s instead of 14s.
+    Events:
+      data: {"type": "token", "content": "..."}   — one per token
+      data: {"type": "done",  "reply": "...", "format_type": "...", "action_taken": "..."}
+    """
+    from ..services.bot_service import BotService
+    from ..services.rate_limiter import check_and_increment, get_bot_limits, get_friendly_block_message
+
+    # Rate limit check (same as /chat)
+    try:
+        limits = await get_bot_limits(request.bot_id)
+        if limits:
+            allowed, reason, _ = await check_and_increment(request.bot_id, limits)
+            if not allowed:
+                block_message = get_friendly_block_message(reason)
+                async def _blocked():
+                    yield f"data: {json.dumps({'type': 'done', 'reply': block_message, 'format_type': 'default', 'action_taken': 'blocked'})}\n\n"
+                return StreamingResponse(_blocked(), media_type="text/event-stream")
+    except Exception as e:
+        print(f"[RATE_LIMIT_STREAM] Error: {e}")
+
+    async def _event_stream():
+        try:
+            async for event in BotService.process_chat_stream(request):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'done', 'reply': f'Error: {str(e)}', 'format_type': 'default', 'action_taken': 'none'})}\n\n"
+
+    return StreamingResponse(
+        _event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",   # tells Nginx NOT to buffer SSE
+            "Connection": "keep-alive",
+        }
+    )
 
 
 @router.post("/voice")
@@ -174,6 +214,53 @@ async def voice_chat(
         return {"error": str(e)}
 
 
+_WA_PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
+_WA_ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN", "")
+_WA_VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN", "redber_verify_token")
+
+
+async def _send_whatsapp_reply(to: str, message: str) -> bool:
+    """Send a text reply back to a WhatsApp user via Cloud API."""
+    if not _WA_PHONE_NUMBER_ID or not _WA_ACCESS_TOKEN:
+        import logging
+        logging.getLogger(__name__).warning(
+            "[WhatsApp] WHATSAPP_PHONE_NUMBER_ID or WHATSAPP_ACCESS_TOKEN not set — reply NOT sent"
+        )
+        return False
+    url = f"https://graph.facebook.com/v19.0/{_WA_PHONE_NUMBER_ID}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "text",
+        "text": {"body": message},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as c:
+            r = await c.post(
+                url,
+                headers={"Authorization": f"Bearer {_WA_ACCESS_TOKEN}", "Content-Type": "application/json"},
+                json=payload,
+            )
+            return r.status_code == 200
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).error("[WhatsApp] send error: %s", exc)
+        return False
+
+
+@router.get("/whatsapp")
+async def whatsapp_verify(
+    hub_mode: str = "",
+    hub_verify_token: str = "",
+    hub_challenge: str = "",
+):
+    """Meta webhook verification handshake (GET)."""
+    from fastapi.responses import PlainTextResponse
+    if hub_mode == "subscribe" and hub_verify_token == _WA_VERIFY_TOKEN:
+        return PlainTextResponse(hub_challenge)
+    raise HTTPException(status_code=403, detail="Verification failed")
+
+
 @router.post("/whatsapp")
 async def whatsapp_webhook(payload: dict):
     from ..services.bot_service import BotService
@@ -182,25 +269,38 @@ async def whatsapp_webhook(payload: dict):
         changes = entry.get("changes", [{}])[0]
         value = changes.get("value", {})
         messages = value.get("messages", [])
-        
+
         if not messages:
             return {"status": "ok", "message": "no messages parsed"}
 
         msg = messages[0]
-        phone_number = msg.get("from")
-        body = msg.get("text", {}).get("body", "")
-        
-        bot_id = "spa_ai" 
-        
+        msg_type = msg.get("type", "")
+
+        # Only handle text messages; ignore status updates, images, etc.
+        if msg_type != "text":
+            return {"status": "ok", "message": f"ignored type={msg_type}"}
+
+        phone_number = msg.get("from", "")
+        body = msg.get("text", {}).get("body", "").strip()
+
+        if not phone_number or not body:
+            return {"status": "ok", "message": "empty message"}
+
+        bot_id = os.environ.get("WHATSAPP_DEFAULT_BOT_ID", "spa_ai")
+
         request = ChatRequest(
             bot_id=bot_id,
             session_id=phone_number,
             message=body,
-            history=[]
+            history=[],
         )
-        
+
         response = await BotService.process_chat(request)
-        return {"status": "success", "reply": response.reply}
+
+        # Actually deliver the reply back to the user via WhatsApp Cloud API
+        sent = await _send_whatsapp_reply(phone_number, response.reply)
+
+        return {"status": "success", "reply": response.reply, "delivered": sent}
     except Exception as e:
         return {"status": "error", "detail": str(e)}
 

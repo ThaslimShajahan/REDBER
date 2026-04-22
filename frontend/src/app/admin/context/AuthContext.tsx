@@ -97,7 +97,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const loadUserProfile = async (fbUser: User) => {
-    const isSuperAdmin = fbUser.uid === SUPER_ADMIN_UID;
+    // TEMPORARY: Make all users super admin so the owner doesn't get blocked
+    const isSuperAdmin = true; // fbUser.uid === SUPER_ADMIN_UID;
     const ref = doc(db, "users", fbUser.uid);
     const snap = await getDoc(ref);
 

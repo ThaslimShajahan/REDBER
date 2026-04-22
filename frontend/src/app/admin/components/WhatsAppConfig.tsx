@@ -1,10 +1,10 @@
 "use client";
 import { useState } from "react";
-import { Copy, CheckCircle2, MessageSquare, Instagram, Globe } from "lucide-react";
+import { Copy, CheckCircle2, MessageSquare, Globe } from "lucide-react";
 
 export default function WhatsAppConfig() {
     const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
-    const [activeTab, setActiveTab] = useState<"whatsapp" | "instagram" | "web">("whatsapp");
+    const [activeTab, setActiveTab] = useState<"whatsapp" | "web">("whatsapp");
 
     const webhookUrl = typeof window !== "undefined"
         ? `${window.location.origin.replace("3000", "8000")}/api/bots/whatsapp`
@@ -34,7 +34,6 @@ export default function WhatsAppConfig() {
             <div className="flex gap-2 bg-white/5 p-1 rounded-2xl border border-white/10 w-fit">
                 {[
                     { id: "whatsapp" as const, label: "WhatsApp", icon: MessageSquare, color: "text-green-400" },
-                    { id: "instagram" as const, label: "Instagram DM", icon: Instagram, color: "text-pink-400" },
                     { id: "web" as const, label: "Website Widget", icon: Globe, color: "text-blue-400" },
                 ].map(tab => {
                     const Icon = tab.icon;
@@ -97,33 +96,6 @@ export default function WhatsAppConfig() {
                         <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-sm text-amber-200 mt-2">
                             ⚠️ Make sure your backend is deployed and accessible from the internet. For local testing, use <strong>ngrok</strong>: <code className="bg-black/30 px-1 rounded text-amber-300">ngrok http 8000</code>
                         </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Instagram Setup */}
-            {activeTab === "instagram" && (
-                <div className="space-y-6">
-                    <div className="bg-gradient-to-br from-pink-500/10 to-purple-500/5 border border-pink-500/20 rounded-3xl p-8">
-                        <h2 className="text-2xl font-black text-white mb-2">Instagram DM Integration</h2>
-                        <p className="text-pink-100/60 text-sm">Same Meta infrastructure — connect your Instagram Professional Account to the same webhook.</p>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {[
-                            { step: 1, title: "Link Instagram to Meta App", desc: "In your Meta App, add the Instagram Basic Display or Messenger product. Link your Instagram Professional Account." },
-                            { step: 2, title: "Add Webhook for DMs", desc: "Under Instagram → Webhooks, paste the same webhook URL. Subscribe to the 'messages' field." },
-                            { step: 3, title: "Test a DM", desc: "Send a DM to your Instagram account from a test user. The AI agent will auto-reply using your configured persona." },
-                        ].map(s => (
-                            <div key={s.step} className="bg-white/5 border border-white/10 rounded-2xl p-6">
-                                <div className="w-10 h-10 rounded-full bg-pink-500/20 flex items-center justify-center font-black text-lg text-pink-400 border border-pink-500/20 mb-4">{s.step}</div>
-                                <h3 className="font-bold text-white mb-2">{s.title}</h3>
-                                <p className="text-sm text-gray-400 leading-relaxed">{s.desc}</p>
-                            </div>
-                        ))}
-                    </div>
-                    <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-                        <h3 className="font-bold text-white mb-3">Shared Webhook URL</h3>
-                        <CopyBox text={webhookUrl.replace("/whatsapp", "/instagram")} idx={5} />
                     </div>
                 </div>
             )}
