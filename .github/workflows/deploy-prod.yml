@@ -59,7 +59,7 @@ jobs:
             echo "♻️  Restarting backend via PM2..."
             pm2 delete redber-backend-prod 2>/dev/null || true
             pm2 delete redber-backend 2>/dev/null || true
-            pm2 start "venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000" \
+            pm2 start "venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 9090" \
               --name redber-backend-prod \
               --cwd "$(pwd)"
             pm2 save
