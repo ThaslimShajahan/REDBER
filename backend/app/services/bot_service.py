@@ -3,6 +3,7 @@ import typing
 import asyncio
 import time
 import datetime
+import zoneinfo
 import logging
 import re as _re
 from app.models.schemas import ChatRequest, ChatResponse
@@ -241,8 +242,13 @@ BOOKING PROTOCOL:
 
         # ── System prompt ─────────────────────────────────────────────────────
         _no_kb_msg = "⚠️ No knowledge base data found. Do NOT invent anything. Tell the user you don't have that information and offer to connect them with the team."
-        current_time = datetime.datetime.now().strftime("%Y-%m-%d %I:%M %p")
-        current_date = datetime.datetime.now().strftime("%A, %B %d, %Y")
+        try:
+            tz = zoneinfo.ZoneInfo(request.timezone) if getattr(request, "timezone", None) else datetime.timezone.utc
+        except Exception:
+            tz = datetime.timezone.utc
+        now = datetime.datetime.now(tz)
+        current_time = now.strftime("%Y-%m-%d %I:%M %p")
+        current_date = now.strftime("%A, %B %d, %Y")
 
         image_capability_section = ""
         if has_image or is_automotive:

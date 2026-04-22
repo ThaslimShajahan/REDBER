@@ -11,6 +11,7 @@ class ChatRequest(BaseModel):
     session_id: str
     history: Optional[List[ChatMessage]] = []
     image_data: Optional[str] = None
+    timezone: Optional[str] = None
 
 class ChatResponse(BaseModel):
     reply: str

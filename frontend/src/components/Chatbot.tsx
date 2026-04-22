@@ -538,6 +538,7 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
                     session_id: sessionId,
                     history: messages.map((m) => ({ sender: m.sender, text: m.text })),
                     image_data: capturedImage,
+                    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
                 }),
             });
 
