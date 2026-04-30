@@ -2,8 +2,10 @@
 
 import { motion, AnimatePresence, useScroll, useSpring } from "framer-motion";
 import Image from "next/image";
-import Hero3DModel from "@/components/Hero3DModel";
+import dynamic from "next/dynamic";
 import Link from "next/link";
+
+const Hero3DModel = dynamic(() => import("@/components/Hero3DModel"), { ssr: false });
 import { ArrowRight, ChevronDown, CheckCircle, ArrowUpRight, MessageCircle, Bot, Menu, X, ChevronUp, Facebook } from "lucide-react";
 import { useState, useEffect } from "react";
 import { API_BASE } from "../lib/api";

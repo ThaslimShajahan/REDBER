@@ -97,19 +97,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const loadUserProfile = async (fbUser: User) => {
-    // TEMPORARY: Make all users super admin so the owner doesn't get blocked
-    const isSuperAdmin = true; // fbUser.uid === SUPER_ADMIN_UID;
+    const isSuperAdmin = fbUser.uid === SUPER_ADMIN_UID;
     const ref = doc(db, "users", fbUser.uid);
     const snap = await getDoc(ref);
 
     if (snap.exists()) {
       const d = snap.data();
+      // Defensive: If a non-SA UID somehow has role=super_admin in Firestore (from the old bug),
+      // we downgrade them to client so they don't retain elevated access.
+      const resolvedRole = isSuperAdmin ? "super_admin" : (d.role === "super_admin" ? "client" : (d.role || "client"));
+      const resolvedStatus = isSuperAdmin ? "approved" : (d.status || "pending");
       setUser({
         uid: fbUser.uid,
         email: fbUser.email,
         name: fbUser.displayName || d.name || fbUser.email,
-        role: isSuperAdmin ? "super_admin" : (d.role || "client"),
-        status: isSuperAdmin ? "approved" : (d.status || "pending"),
+        role: resolvedRole,
+        status: resolvedStatus,
         planId: d.planId,
         botIds: isSuperAdmin ? [] : (d.botIds || []), // super admin sees all
         features: isSuperAdmin ? SUPER_ADMIN_FEATURES : (d.features || DEFAULT_FEATURES),
