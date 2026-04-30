@@ -60,6 +60,9 @@ app.add_middleware(
         "http://redber.in",
         "http://www.redber.in",
         "https://dev.redber.in",
+        # Client sites (for future custom admin panels on client domains)
+        "https://acenzos.com",
+        "https://www.acenzos.com",
     ],
     allow_credentials=True,
     allow_methods=["*"],

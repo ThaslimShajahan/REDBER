@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(python -c \"import uvicorn; from app.main import app; print\\('Import OK'\\)\")",
+      "Bash(uvicorn app.main:app --port 8099 --no-access-log)",
+      "Bash(curl -s http://localhost:8099/health)",
+      "Bash(python -m json.tool)",
+      "Bash(curl -s http://localhost:8099/api/bots/public/list)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f'Bots returned: {len\\(d\\)}'\\); [print\\(f'  - {b[\\\\\"id\\\\\"]} | {b[\\\\\"name\\\\\"]} | status={b[\\\\\"status\\\\\"]}'\\) for b in d[:5]]\")",
+      "Bash(curl -s -N -X POST http://localhost:8099/api/bots/chat/stream -H 'Content-Type: application/json' -d '{\"message\":\"What are your opening hours?\",\"bot_id\":\"spice-garden-ai\",\"session_id\":\"test-123\",\"history\":[]}' --max-time 15)",
+      "Bash(curl -s -N -X POST http://localhost:8099/api/bots/chat/stream -H 'Content-Type: application/json' -d '{\"message\":\"What are your opening hours?\",\"bot_id\":\"spice-garden-ai\",\"session_id\":\"test-123\",\"history\":[]}' --max-time 20)",
+      "Bash(python -c \"import sys,json; line=sys.stdin.read\\(\\).strip\\(\\); data=json.loads\\(line.replace\\('data: ',''\\)\\); print\\(json.dumps\\({'reply':data['reply'],'format':data.get\\('format_type'\\),'action':data.get\\('action_taken'\\)},indent=2\\)\\)\")",
+      "Bash(curl -s http://localhost:8099/api/bots/chat/stream -X POST -H 'Content-Type: application/json' -d '{\"message\":\"I want to book a table for 4 on Saturday at 7pm, my name is Raj and phone is 9876543210\",\"bot_id\":\"spice-garden-ai\",\"session_id\":\"lead-test-001\",\"history\":[]}' --max-time 25)",
+      "Bash(python -c \"import sys,json; line=sys.stdin.read\\(\\).strip\\(\\); data=json.loads\\(line.replace\\('data: ',''\\)\\); print\\(json.dumps\\({'reply':data['reply'],'action':data.get\\('action_taken'\\)},indent=2\\)\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(curl -s -X POST http://localhost:8099/api/admin/ingest -H 'Content-Type: application/json' -d '{\"bot_id\":\"test\",\"url\":\"http://localhost/evil\"}')",
+      "Bash(curl -s http://localhost:8099/openapi.json)",
+      "Bash(curl -s -X POST http://localhost:8099/api/admin/kb/ingest_url -H 'Content-Type: application/json' -d '{\"bot_id\":\"test\",\"url\":\"http://192.168.1.1/secret\"}')",
+      "Bash(curl -s \"http://localhost:8099/api/admin/leads?limit=2&offset=0\")",
+      "Bash(npm run *)",
+      "Bash(taskkill /F /PID 24280)",
+      "Bash(python -m pytest tests/ -q)",
+      "Bash(python3 -c \"import sys,json; p=json.load\\(sys.stdin\\); print\\('start:', p['scripts'].get\\('start'\\)\\); print\\('build:', p['scripts'].get\\('build'\\)\\)\")",
+      "Bash(git checkout *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git merge *)",
+      "Bash(git commit *)",
+      "Bash(cp frontend/public/favicon_asset/favicon.ico frontend/src/app/favicon.ico)",
+      "Bash(cp frontend/public/favicon_asset/apple-touch-icon.png frontend/src/app/apple-icon.png)",
+      "Bash(cp frontend/public/favicon_asset/android-chrome-192x192.png frontend/src/app/icon.png)",
+      "Bash(cp frontend/public/favicon_asset/favicon-16x16.png frontend/public/favicon-16x16.png)",
+      "Bash(cp frontend/public/favicon_asset/favicon-32x32.png frontend/public/favicon-32x32.png)"
+    ],
+    "additionalDirectories": [
+      "C:\\Work\\persona-ai-mvp\\frontend\\public"
+    ]
+  }
+}

@@ -66,6 +66,7 @@ export default function SettingsView() {
                     avatar: editingBot.avatar || "",
                     status: editingBot.status || "Active",
                     is_public: editingBot.is_public || false,
+                    allowed_domains: editingBot.allowed_domains || [],
                     page_config: editingBot.page_config || {},
                     persona_config: editingBot.persona_config || {}
                 })
@@ -346,8 +347,8 @@ export default function SettingsView() {
                                         </div>
                                         <div className="bg-white/5 border border-white/10 rounded-xl p-4 flex items-center justify-between">
                                             <div>
-                                                <h3 className="text-sm font-bold text-white">Public Visibility</h3>
-                                                <p className="text-xs text-gray-500">Show this bot on the landing page</p>
+                                                <h3 className="text-sm font-bold text-white">Show in Redber Live Demo</h3>
+                                                <p className="text-xs text-gray-500">Display this bot in the public showcase on redber.in — does NOT affect client embed widgets</p>
                                             </div>
                                             <button
                                                 type="button"
@@ -660,6 +661,45 @@ export default function SettingsView() {
                                                 <p className="text-[10px] text-gray-500 mt-4 leading-relaxed">The widget will automatically attach itself to the bottom right corner of the screen when loaded. Ensure your website allows embedded third-party iframes.</p>
                                             </div>
                                             <div className="absolute -right-20 -bottom-20 w-64 h-64 bg-purple-600/10 blur-[80px] rounded-full pointer-events-none" />
+                                        </div>
+
+                                        {/* ── Domain Allowlist ─────────────────────────────────────────── */}
+                                        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 space-y-3">
+                                            <div>
+                                                <h3 className="text-sm font-bold text-amber-400">🔒 Domain Allowlist</h3>
+                                                <p className="text-xs text-gray-400 mt-1">Restrict this bot to only work on specific client domains. Leave empty to allow all websites (default).</p>
+                                            </div>
+                                            <div className="space-y-2">
+                                                {(editingBot.allowed_domains || []).map((domain: string, idx: number) => (
+                                                    <div key={idx} className="flex gap-2">
+                                                        <input
+                                                            type="text"
+                                                            value={domain}
+                                                            onChange={e => {
+                                                                const updated = [...(editingBot.allowed_domains || [])];
+                                                                updated[idx] = e.target.value;
+                                                                setEditingBot({ ...editingBot, allowed_domains: updated });
+                                                            }}
+                                                            placeholder="e.g. acenzos.com"
+                                                            className="flex-1 bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white font-mono outline-none focus:border-amber-500 transition-colors"
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const updated = (editingBot.allowed_domains || []).filter((_: string, i: number) => i !== idx);
+                                                                setEditingBot({ ...editingBot, allowed_domains: updated });
+                                                            }}
+                                                            className="px-3 py-2 bg-rose-500/20 text-rose-400 rounded-lg hover:bg-rose-500/30 transition-colors text-xs font-bold"
+                                                        >✕</button>
+                                                    </div>
+                                                ))}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setEditingBot({ ...editingBot, allowed_domains: [...(editingBot.allowed_domains || []), ""] })}
+                                                    className="text-xs text-amber-400 hover:text-amber-300 font-bold border border-amber-500/30 rounded-lg px-3 py-1.5 transition-colors w-full hover:bg-amber-500/10"
+                                                >+ Add Domain</button>
+                                            </div>
+                                            <p className="text-[10px] text-gray-500">Example: <code className="text-amber-400/80">acenzos.com</code> — do not include https:// or trailing slash. The check ignores www automatically.</p>
                                         </div>
                                         
                                         <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">

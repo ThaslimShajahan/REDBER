@@ -14,8 +14,8 @@ FIREBASE_PROJECT_ID = os.environ.get("FIREBASE_PROJECT_ID", "redber-persona-mvp"
 SUPER_ADMIN_UID = os.environ.get("SUPER_ADMIN_UID", "0QldlPOgyQS2ddhvvOBHyB797hD2")
 
 # Set to "true" in .env / CI when tenant isolation should be enforced.
-# Leave "false" during MVP to preserve existing behaviour for all authenticated users.
-ENFORCE_TENANT_ISOLATION = os.environ.get("ENFORCE_TENANT_ISOLATION", "false").lower() == "true"
+# Now defaults to "true" — super admin bypass is handled by the SUPER_ADMIN_UID check.
+ENFORCE_TENANT_ISOLATION = os.environ.get("ENFORCE_TENANT_ISOLATION", "true").lower() == "true"
 
 FIREBASE_CERTS_URL = (
     "https://www.googleapis.com/robot/v1/metadata/x509/"

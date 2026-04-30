@@ -777,6 +777,7 @@ class BotUpdateRequest(BaseModel):
     is_public: Optional[bool] = False
     page_config: dict = {}
     persona_config: dict = {}
+    allowed_domains: Optional[List[str]] = []  # Domain allowlist for widget embedding
 
 
 @router.put("/bots/{bot_id}")
@@ -796,6 +797,7 @@ async def update_bot(bot_id: str, request: BotUpdateRequest):
             "is_public": request.is_public,
             "page_config": request.page_config,
             "persona_config": request.persona_config,
+            "allowed_domains": request.allowed_domains or [],
         }).eq("id", bot_id).execute()
         return {"status": "success"}
     except Exception as e:
@@ -826,6 +828,7 @@ class BotCreateRequest(BaseModel):
     is_public: bool = False
     page_config: dict = {}
     persona_config: dict = {}
+    allowed_domains: List[str] = []  # Domain allowlist for widget embedding
 
 
 class GeneratePersonaRequest(BaseModel):
@@ -931,6 +934,7 @@ async def create_bot(request: BotCreateRequest):
             "is_public": request.is_public,
             "page_config": request.page_config,
             "persona_config": request.persona_config,
+            "allowed_domains": request.allowed_domains,
         }).execute()
         return {"status": "created", "id": request.id}
     except Exception as e:

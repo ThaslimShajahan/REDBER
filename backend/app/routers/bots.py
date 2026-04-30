@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from ..dependencies.auth import get_current_user
 import json
@@ -21,6 +21,44 @@ router = APIRouter(
     prefix="/api/bots",
     tags=["bots"]
 )
+
+
+def _check_domain_allowlist(bot_id: str, request_origin: str) -> None:
+    """
+    Fetch the bot's allowed_domains from Supabase and raise 403 if the
+    request origin is not in the list. A bot with an empty list is open to all.
+    """
+    supabase = get_supabase_client()
+    if not supabase:
+        return  # If DB is unavailable, fail open rather than blocking all traffic
+    try:
+        resp = supabase.table("bots").select("allowed_domains").eq("id", bot_id).single().execute()
+        domains: list = resp.data.get("allowed_domains") or [] if resp.data else []
+        if not domains:
+            return  # No restriction — open to all
+
+        # Normalise: strip trailing slashes and scheme variations
+        from urllib.parse import urlparse
+        def _host(url: str) -> str:
+            try:
+                parsed = urlparse(url)
+                return parsed.netloc.lower().lstrip("www.") if parsed.netloc else url.lower().lstrip("www.")
+            except Exception:
+                return url.lower()
+
+        origin_host = _host(request_origin)
+        allowed_hosts = [_host(d) for d in domains]
+        if origin_host not in allowed_hosts:
+            raise HTTPException(
+                status_code=403,
+                detail=f"This bot is not authorised to run on '{request_origin}'. Contact the bot owner."
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("[DOMAIN_CHECK] Error checking allowed_domains for bot %s: %s", bot_id, e)
+        # Fail open on unexpected errors to avoid blocking legitimate traffic
 
 
 class TTSRequest(BaseModel):
@@ -88,9 +126,13 @@ class SetRateLimitsRequest(BaseModel):
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+async def chat(request: ChatRequest, http_request: Request):
     from ..services.bot_service import BotService
     from ..services.rate_limiter import check_and_increment, get_bot_limits, get_friendly_block_message
+
+    # Domain allowlist check
+    origin = http_request.headers.get("origin") or http_request.headers.get("referer") or ""
+    _check_domain_allowlist(request.bot_id, origin)
 
     try:
         limits = await get_bot_limits(request.bot_id)
@@ -121,7 +163,7 @@ async def chat(request: ChatRequest):
 
 
 @router.post("/chat/stream")
-async def chat_stream(request: ChatRequest):
+async def chat_stream(request: ChatRequest, http_request: Request):
     """
     Streaming chat endpoint using Server-Sent Events (SSE).
     Yields tokens as they arrive from OpenAI — first token in ~1-2s instead of 14s.
@@ -131,6 +173,15 @@ async def chat_stream(request: ChatRequest):
     """
     from ..services.bot_service import BotService
     from ..services.rate_limiter import check_and_increment, get_bot_limits, get_friendly_block_message
+
+    # Domain allowlist check
+    origin = http_request.headers.get("origin") or http_request.headers.get("referer") or ""
+    try:
+        _check_domain_allowlist(request.bot_id, origin)
+    except HTTPException as e:
+        async def _denied():
+            yield f"data: {json.dumps({'type': 'done', 'reply': e.detail, 'format_type': 'default', 'action_taken': 'blocked'})}\n\n"
+        return StreamingResponse(_denied(), media_type="text/event-stream")
 
     # Rate limit check (same as /chat)
     try:
