@@ -98,16 +98,22 @@ jobs:
 
             echo "📦 Installing Node dependencies..."
             cd frontend
+            rm -f ../package-lock.json || true
+            rm -f ../yarn.lock || true
             npm ci --prefer-offline -q
+
+            echo "🛑 Stopping PM2 and clearing cache to prevent EACCES lock..."
+            pm2 delete redber-frontend-prod 2>/dev/null || true
+            rm -rf .next || true
 
             echo "🏗️  Building Next.js for PRODUCTION..."
             NEXT_PUBLIC_API_URL=https://api.redber.in npm run build
 
-            echo "♻️  Restarting frontend via PM2..."
-            pm2 delete redber-frontend-prod 2>/dev/null || true
+            echo "♻️  Starting frontend via PM2..."
             pm2 start "npm run start -- --port 4000" \
               --name redber-frontend-prod \
               --cwd "$(pwd)"
             pm2 save
 
             echo "✅ Frontend PROD deployed to redber.in"
+
