@@ -102,25 +102,22 @@ jobs:
             rm -f ../yarn.lock || true
             npm ci --prefer-offline -q
 
-            echo "🛑 Stopping PM2 before build..."
+            echo "🛑 Stopping PM2 and relocating old build..."
             pm2 delete redber-frontend-prod 2>/dev/null || true
+            # mv works even on root-owned dirs because parent dir is user-owned
+            mv .next "/tmp/next-old-$$" 2>/dev/null || true
 
-            echo "🏗️  Building Next.js into /tmp to avoid permission conflicts..."
-            FRESH_BUILD="/tmp/redber-next-$(date +%s)"
-            mkdir -p "$FRESH_BUILD"
-            NEXT_DIST_DIR="$FRESH_BUILD" NEXT_PUBLIC_API_URL=https://api.redber.in npm run build
-
-            echo "🔄  Swapping new build into place..."
-            rm -rf .next.old 2>/dev/null || true
-            mv .next .next.old 2>/dev/null || true
-            mv "$FRESH_BUILD" .next
-            rm -rf .next.old &
+            echo "🏗️  Building Next.js for PRODUCTION (fresh .next)..."
+            NEXT_PUBLIC_API_URL=https://api.redber.in npm run build
 
             echo "♻️  Starting frontend via PM2..."
             pm2 start "npm run start -- --port 4000" \
               --name redber-frontend-prod \
               --cwd "$(pwd)"
             pm2 save
+
+            # Clean up old root-owned build in the background
+            rm -rf "/tmp/next-old-$$" &
 
             echo "✅ Frontend PROD deployed to redber.in"
 
