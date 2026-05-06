@@ -1,19 +1,11 @@
 """
-ws_call.py – WebSocket relay between browser and OpenAI Realtime API.
+ws_call.py – WebSocket relay supporting OpenAI Realtime and ElevenLabs Conversational AI.
 
-Flow:
-  Browser (raw PCM16 at 24 kHz via AudioWorklet)
-      │  binary Int16 frames
-      ▼
-  FastAPI WebSocket  (/api/bots/ws/call/{bot_id})
-      │  base64-encode + input_audio_buffer.append
-      ▼
-  OpenAI Realtime API  (gpt-4o-realtime-preview)
-      │  response.audio.delta  (base64 PCM16)
-      ▼
-  FastAPI WebSocket  (decode → raw Int16 bytes)
-      │
-      └── Browser  (Int16→Float32 → AudioContext playback)
+Provider is selected per-bot via persona_config.voice_provider:
+  "openai"      (default) → OpenAI gpt-4o-realtime-preview
+  "elevenlabs"            → ElevenLabs Conversational AI (any ElevenLabs voice incl. Hindi/Indian)
+
+Both paths receive raw PCM16 at 24 kHz from the browser and send PCM16 back.
 """
 
 import os
@@ -23,6 +15,7 @@ import base64
 import logging
 import datetime
 import websockets
+import httpx
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
@@ -32,8 +25,10 @@ from ..integrations.supabase_client import get_supabase_client
 router = APIRouter(prefix="/api/bots/ws", tags=["bots-ws"])
 logger = logging.getLogger(__name__)
 
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
-REALTIME_URL = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview"
+OPENAI_API_KEY      = os.environ.get("OPENAI_API_KEY", "").strip()
+ELEVENLABS_API_KEY  = os.environ.get("ELEVENLABS_API_KEY", "").strip()
+REALTIME_URL        = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview"
+ELEVEN_CONVAI_URL   = "wss://api.elevenlabs.io/v1/convai/conversation"
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -54,19 +49,21 @@ async def _safe_send_bytes(ws: WebSocket, data: bytes) -> None:
         pass
 
 
-async def _fetch_bot_config(bot_id: str, supabase) -> tuple[str, dict]:
+async def _fetch_bot_config(bot_id: str, supabase) -> tuple[str, dict, str]:
     persona = "You are a friendly and helpful AI receptionist."
     config: dict = {}
+    name = ""
     if not supabase:
-        return persona, config
+        return persona, config, name
     try:
-        res = supabase.table("bots").select("persona_prompt, persona_config").eq("id", bot_id).execute()
+        res = supabase.table("bots").select("persona_prompt, persona_config, name").eq("id", bot_id).execute()
         if res.data:
             persona = res.data[0].get("persona_prompt") or persona
             config = res.data[0].get("persona_config") or {}
+            name = res.data[0].get("name", "")
     except Exception as e:
         logger.warning("[WS] fetch bot config: %s", e)
-    return persona, config
+    return persona, config, name
 
 
 async def _fetch_kb_context(bot_id: str, supabase) -> str:
@@ -84,6 +81,87 @@ async def _fetch_kb_context(bot_id: str, supabase) -> str:
             return "\n\n".join(item["content"] for item in res.data)
     except Exception as e:
         logger.warning("[WS] fetch KB context: %s", e)
+    return ""
+
+
+async def _get_or_create_elevenlabs_agent(bot_id: str, eleven_key: str, supabase) -> str:
+    """
+    Returns the ElevenLabs agent_id for this bot, creating one via the API if needed.
+    Auto-created agent_id is persisted back to persona_config so it reuses next call.
+    """
+    if supabase:
+        try:
+            bot_res = supabase.table("bots").select("persona_config").eq("id", bot_id).execute()
+            if bot_res.data:
+                stored = (bot_res.data[0].get("persona_config") or {}).get("elevenlabs_agent_id", "").strip()
+                if stored:
+                    return stored
+        except Exception as e:
+            logger.warning("[ElevenWS] fetch stored agent_id: %s", e)
+
+    logger.info("[ElevenWS] Auto-creating ElevenLabs agent for bot=%s", bot_id)
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                "https://api.elevenlabs.io/v1/convai/agents/create",
+                headers={"xi-api-key": eleven_key, "Content-Type": "application/json"},
+                json={
+                    "name": f"redber_{bot_id}",
+                    "conversation_config": {
+                        "asr": {
+                            "quality": "high",
+                            "provider": "elevenlabs",
+                            "user_input_audio_format": "pcm_24000",
+                        },
+                        "tts": {
+                            "model_id": "eleven_turbo_v2",
+                            "agent_output_audio_format": "pcm_24000",
+                            "optimize_streaming_latency": 4,
+                            "stability": 0.5,
+                            "similarity_boost": 0.75,
+                        },
+                        "turn": {
+                            "turn_timeout": 3,
+                            "silence_end_call_timeout": 300,
+                            "turn_eagerness": "high",
+                        },
+                        "agent": {
+                            "prompt": {"prompt": "You are a helpful assistant."},
+                            "language": "en",
+                            "first_message": "",
+                        },
+                    },
+                    "platform_settings": {
+                        "overrides": {
+                            "conversation_config_override": {
+                                "agent": {
+                                    "first_message": True,
+                                    "language": True,
+                                    "prompt": {"prompt": True},
+                                },
+                                "tts": {"voice_id": True},
+                            }
+                        }
+                    },
+                },
+            )
+            if resp.status_code in (200, 201):
+                new_id = resp.json().get("agent_id", "")
+                if new_id:
+                    logger.info("[ElevenWS] Created agent %s for bot=%s", new_id, bot_id)
+                    if supabase:
+                        try:
+                            br = supabase.table("bots").select("persona_config").eq("id", bot_id).execute()
+                            cfg = (br.data[0].get("persona_config") or {}) if br.data else {}
+                            cfg["elevenlabs_agent_id"] = new_id
+                            supabase.table("bots").update({"persona_config": cfg}).eq("id", bot_id).execute()
+                        except Exception as e:
+                            logger.warning("[ElevenWS] save new agent_id: %s", e)
+                    return new_id
+            else:
+                logger.error("[ElevenWS] agent create failed: %s %s", resp.status_code, resp.text[:300])
+    except Exception as e:
+        logger.error("[ElevenWS] agent create error: %s", e)
     return ""
 
 
@@ -124,6 +202,255 @@ def _build_system_prompt(persona: str, config: dict, kb_context: str) -> str:
     return prompt
 
 
+# ─── ElevenLabs Conversational AI Relay ──────────────────────────────────────
+
+def _build_eleven_system_prompt(base_prompt: str, config: dict) -> str:
+    """
+    Builds the ElevenLabs system prompt with critical voice-call rules FIRST
+    so they're never cut off by the 6000-char WebSocket override limit.
+    """
+    industry = config.get("industry", "").lower()
+
+    if "restaurant" in industry or "food" in industry:
+        booking_rule = "Collect Date, Time, Guest count, Name, Phone — one question at a time."
+    elif "hotel" in industry or "hospitality" in industry:
+        booking_rule = "Collect Check-in date, Check-out date, Room type, Name, Phone — one at a time."
+    elif "automotive" in industry or "dealer" in industry:
+        booking_rule = "Collect Preferred Date, Time, Name, Phone — one question at a time."
+    else:
+        booking_rule = "Collect Name, Phone, and preferred time — one question at a time."
+
+    now = datetime.datetime.now()
+
+    call_rules = (
+        "━━━ VOICE CALL RULES — MANDATORY, HIGHEST PRIORITY ━━━\n\n"
+        "LANGUAGE: ENGLISH ONLY. Always respond in English. Never switch to any other language, "
+        "even if the caller speaks in another language.\n\n"
+        "FILLERS — start EVERY response with a natural filler (vary, never repeat the same twice):\n"
+        '  "Sure!", "Oh absolutely!", "Of course!", "Got it!", "Right, so...", "Hmm let me see...",\n'
+        '  "Great question!", "Ah yes!", "Certainly!", "Yeah for sure!", "Oh nice!", "Happy to help!",\n'
+        '  "Let me check on that...", "One moment!", "Sounds good!"\n\n'
+        "RESPONSE LENGTH: 1–3 short sentences max. No bullet points, numbered lists, or markdown.\n\n"
+        "INTERRUPTIONS: If the caller speaks while you're responding, stop immediately and listen.\n\n"
+        f"DATE/TIME: TODAY {now.strftime('%A %B %d %Y')} | NOW {now.strftime('%I:%M %p')} — never book past dates.\n\n"
+        f"BOOKING: {booking_rule} Once confirmed, repeat back warmly and say [SYSTEM_BOOKING_CONFIRMED].\n\n"
+        "NEVER say 'How can I assist you today?' — robotic. Never claim to be an AI unless asked directly.\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "YOUR PERSONA & KNOWLEDGE:\n"
+    )
+
+    # Rules are ~900 chars; allow up to 5100 for persona/KB so total stays within 6000
+    trimmed_base = base_prompt[:5100] if len(base_prompt) > 5100 else base_prompt
+    return call_rules + trimmed_base
+
+
+async def _relay_elevenlabs(
+    websocket: WebSocket,
+    bot_id: str,
+    session_id: str,
+    system_prompt: str,
+    config: dict,
+    supabase,
+    bot_name: str = "",
+) -> None:
+    """
+    Relay the voice call through ElevenLabs Conversational AI.
+    Tuned for minimum latency phone-call feel with natural fillers.
+    Audio: pcm_24000 both ways (matches browser PCM16Player at 24 kHz).
+    """
+    voice_id    = config.get("elevenlabs_voice_id", "").strip()
+    # Read key fresh — picks up .env changes without server restart
+    eleven_key  = os.environ.get("ELEVENLABS_API_KEY", "").strip() or ELEVENLABS_API_KEY
+
+    # Get or auto-create the ElevenLabs agent (stored in persona_config.elevenlabs_agent_id)
+    agent_id = config.get("elevenlabs_agent_id", "").strip()
+    if not agent_id:
+        agent_id = await _get_or_create_elevenlabs_agent(bot_id, eleven_key, supabase)
+        if agent_id:
+            await asyncio.sleep(1.5)  # brief delay for ElevenLabs to provision the new agent
+    if not agent_id:
+        await _safe_send_json(websocket, {"type": "error", "message": "ElevenLabs agent could not be created. Check API key permissions (ElevenAgents → Write)."})
+        return
+    logger.info("[ElevenWS] Using agent=%s voice=%s for bot=%s", agent_id, voice_id or "default", bot_id)
+    ws_url      = f"{ELEVEN_CONVAI_URL}?agent_id={agent_id}"
+    chat_history: list[dict] = []
+
+    eleven_prompt = _build_eleven_system_prompt(system_prompt, config)
+
+    # Build opening greeting so the bot speaks immediately when call connects
+    greeting = f"Hello! I'm {bot_name}. How can I help you today?" if bot_name else "Hello! How can I help you today?"
+
+    try:
+        async with websockets.connect(
+            ws_url,
+            additional_headers={"xi-api-key": eleven_key},
+            max_size=8 * 1024 * 1024,
+        ) as eleven_ws:
+
+            # ── Init: override prompt, voice, audio format ──
+            # Voice calls are English-only — never override to another language.
+            # asr/turn/tts.model_id cannot be overridden — they're fixed at agent creation.
+            init_msg: dict = {
+                "type": "conversation_initiation_client_data",
+                "conversation_config_override": {
+                    "agent": {
+                        "prompt": {"prompt": eleven_prompt[:6000]},
+                        "first_message": greeting,
+                        "language": "en",
+                    },
+                    "tts": {"voice_id": voice_id} if voice_id else {},
+                },
+            }
+            await eleven_ws.send(json.dumps(init_msg))
+
+            # Event set after the bot's first turn ends — lets browser_to_eleven
+            # know it's safe to start forwarding mic audio to ElevenLabs.
+            # Without this gate, ambient noise sent during the opening greeting
+            # triggers ElevenLabs VAD → interrupts the bot → call drops.
+            mic_open = asyncio.Event()
+
+            # ── Browser → ElevenLabs ───────────────────────────────────────
+            async def browser_to_eleven() -> None:
+                try:
+                    while True:
+                        msg = await websocket.receive()
+                        if "bytes" in msg and msg["bytes"]:
+                            # Drain (discard) mic audio until the opening greeting ends.
+                            # Fallback: open unconditionally after 8 seconds so the mic
+                            # is never permanently muted if no greeting is configured.
+                            if not mic_open.is_set():
+                                continue
+                            encoded = base64.b64encode(msg["bytes"]).decode()
+                            await eleven_ws.send(json.dumps({"user_audio_chunk": encoded}))
+                        elif "text" in msg and msg["text"]:
+                            try:
+                                ctrl = json.loads(msg["text"])
+                                if ctrl.get("action") == "stop":
+                                    break
+                            except Exception:
+                                pass
+                except (WebSocketDisconnect, Exception) as exc:
+                    if not isinstance(exc, WebSocketDisconnect):
+                        logger.debug("[ElevenWS] browser_to_eleven: %s", exc)
+                finally:
+                    try:
+                        await eleven_ws.close()
+                    except Exception:
+                        pass
+
+            async def _open_mic_fallback() -> None:
+                """Ensure mic opens even if no agent_response ever arrives (no greeting)."""
+                await asyncio.sleep(8)
+                mic_open.set()
+
+            # ── ElevenLabs → Browser ───────────────────────────────────────
+            async def eleven_to_browser() -> None:
+                try:
+                    async for raw in eleven_ws:
+                        if not isinstance(raw, str):
+                            # ElevenLabs sometimes sends binary audio directly
+                            if isinstance(raw, bytes):
+                                await _safe_send_bytes(websocket, raw)
+                            continue
+                        try:
+                            event = json.loads(raw)
+                        except Exception:
+                            continue
+
+                        etype = event.get("type", "")
+                        logger.info("[ElevenWS] ← %s", etype)
+
+                        if etype in (
+                            "conversation_initiation_metadata",
+                            "conversation_initiation_client_data_response",
+                        ):
+                            await _safe_send_json(websocket, {"type": "session_ready"})
+
+                        elif etype == "audio":
+                            # audio_event.audio_base_64 is the PCM16 chunk
+                            audio_b64 = (
+                                event.get("audio_event", {}).get("audio_base_64")
+                                or event.get("audio_base_64", "")
+                            )
+                            if audio_b64:
+                                await _safe_send_bytes(websocket, base64.b64decode(audio_b64))
+
+                        elif etype in ("agent_response", "agent_response_correction"):
+                            # Full agent turn text — two possible shapes in different API versions
+                            text = (
+                                event.get("agent_response_event", {}).get("agent_response")
+                                or event.get("agent_response", "")
+                            )
+                            if text:
+                                chat_history.append({"role": "assistant", "content": text})
+                                await _safe_send_json(websocket, {"type": "bot_reply", "text": text})
+                                # After the bot's turn ends, open the mic (greeting is over)
+                                # and schedule bot_complete so the browser can track playback.
+                                _ws_ref = websocket
+                                async def _finish_turn(ws=_ws_ref):
+                                    await asyncio.sleep(1.5)
+                                    mic_open.set()   # allow mic audio to flow to ElevenLabs
+                                    await _safe_send_json(ws, {"type": "bot_complete"})
+                                asyncio.create_task(_finish_turn())
+
+                        elif etype == "user_transcript":
+                            text = (
+                                event.get("user_transcription_event", {}).get("user_transcript")
+                                or event.get("user_transcript", "")
+                            )
+                            if text:
+                                chat_history.append({"role": "user", "content": text})
+                                await _safe_send_json(websocket, {"type": "transcript", "text": text})
+
+                        elif etype == "interruption":
+                            # Caller started speaking — tell browser to stop playing
+                            await _safe_send_json(websocket, {"type": "speech_started"})
+
+                        elif etype == "ping":
+                            event_id = event.get("ping_event", {}).get("event_id")
+                            await eleven_ws.send(json.dumps({"type": "pong", "event_id": event_id}))
+
+                        elif etype == "internal_tentative_agent_response":
+                            pass  # partial transcript, ignore
+
+                        elif etype == "error":
+                            err_msg = (
+                                event.get("error", {}).get("message")
+                                or event.get("message", "ElevenLabs error")
+                            )
+                            logger.error("[ElevenWS] error event: %s", event)
+                            await _safe_send_json(websocket, {"type": "error", "message": err_msg})
+
+                        elif etype == "conversation_ended":
+                            reason = event.get("conversation_ended_event", {})
+                            logger.info("[ElevenWS] conversation_ended — full event: %s", json.dumps(event))
+                            await _safe_send_json(websocket, {"type": "call_ended"})
+                            break
+
+                except websockets.exceptions.ConnectionClosed:
+                    pass
+                except Exception as exc:
+                    logger.error("[ElevenWS] eleven_to_browser: %s", exc)
+
+            asyncio.create_task(_open_mic_fallback())  # safety: open mic after 8s max
+            await asyncio.gather(browser_to_eleven(), eleven_to_browser())
+
+    except Exception as exc:
+        logger.error("[ElevenWS] connection error: %s", exc)
+        await _safe_send_json(websocket, {
+            "type": "error",
+            "message": f"Failed to connect to ElevenLabs: {exc}",
+        })
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+        logger.info("[ElevenWS] Call ended: bot=%s session=%s", bot_id, session_id)
+        if chat_history and supabase:
+            asyncio.create_task(_process_call_leads(bot_id, session_id, chat_history, supabase))
+
+
 # ─── WebSocket Endpoint ───────────────────────────────────────────────────────
 
 @router.websocket("/call/{bot_id}")
@@ -135,15 +462,30 @@ async def websocket_call(
     await websocket.accept()
     logger.info("[WS] Call connected: bot=%s session=%s", bot_id, session_id)
 
+    # Count this as an active visitor
+    try:
+        from ..routers.bots import _touch_session
+        _touch_session(bot_id, session_id)
+    except Exception:
+        pass
+
+    supabase = get_supabase_client()
+    persona, config, bot_name = await _fetch_bot_config(bot_id, supabase)
+    kb_context = await _fetch_kb_context(bot_id, supabase)
+    system_prompt = _build_system_prompt(persona, config, kb_context)
+
+    # Route to ElevenLabs if configured
+    voice_provider  = config.get("voice_provider", "openai")
+    fresh_eleven_key = os.environ.get("ELEVENLABS_API_KEY", "").strip() or ELEVENLABS_API_KEY
+    if voice_provider == "elevenlabs" and fresh_eleven_key:
+        await _relay_elevenlabs(websocket, bot_id, session_id, system_prompt, config, supabase, bot_name)
+        return
+
     if not OPENAI_API_KEY:
         await _safe_send_json(websocket, {"type": "error", "message": "OpenAI API key not configured."})
         await websocket.close()
         return
 
-    supabase = get_supabase_client()
-    persona, config = await _fetch_bot_config(bot_id, supabase)
-    kb_context = await _fetch_kb_context(bot_id, supabase)
-    system_prompt = _build_system_prompt(persona, config, kb_context)
     voice = config.get("realtime_voice", "alloy")
 
     chat_history: list[dict] = []

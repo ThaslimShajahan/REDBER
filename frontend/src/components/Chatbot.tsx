@@ -147,12 +147,15 @@ function SmartMessage({ text, formatType }: { text: string; formatType?: string 
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+interface KbImage { alt: string; url: string; }
+
 interface Message {
     id: string;
     sender: "user" | "bot";
     text: string;
     image?: string;
     formatType?: string;
+    kbImages?: KbImage[];
 }
 
 interface ChatbotProps {
@@ -164,6 +167,10 @@ interface ChatbotProps {
     fullScreen?: boolean;
     suggestedQuestions?: string[];
     voiceEnabled?: boolean;
+    autoTts?: boolean;
+    ttsProvider?: string;        // "openai" | "elevenlabs" | "deepgram"
+    elevenVoiceId?: string;      // ElevenLabs voice ID
+    deepgramVoice?: string;      // Deepgram model name
     onClose?: () => void;
 }
 
@@ -238,7 +245,7 @@ class PCM16Player {
 }
 
 // ─── Main Chatbot Component ───────────────────────────────────────────────────
-export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor, fullScreen, suggestedQuestions, voiceEnabled = false, onClose }: ChatbotProps) {
+export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor, fullScreen, suggestedQuestions, voiceEnabled = false, autoTts = false, ttsProvider = "openai", elevenVoiceId = "", deepgramVoice = "aura-asteria-en", onClose }: ChatbotProps) {
     // Session id
     const [sessionId] = useState<string>(() => {
         const key = `redber_session_${botId}`;
@@ -274,6 +281,7 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
     const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
+    const [visitorCount, setVisitorCount] = useState(0);
 
     useEffect(() => {
         const handleOnline = () => setIsOnline(true);
@@ -285,6 +293,49 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
             window.removeEventListener("offline", handleOffline);
         };
     }, []);
+
+    // Auto-TTS helper — plays a bot reply via the backend TTS endpoint
+    const playTts = useCallback(async (text: string) => {
+        if (!autoTts || !text.trim()) return;
+        const plain = text.replace(/!\[.*?\]\(.*?\)/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/[*_`#>]/g, "").trim();
+        if (!plain) return;
+        try {
+            const res = await fetch(`${API_BASE}/api/bots/tts`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    text: plain.slice(0, 500),
+                    provider: ttsProvider,
+                    voice_id: elevenVoiceId,
+                    voice: deepgramVoice,
+                }),
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            if (!data.audio_b64) return;
+            const bytes = Uint8Array.from(atob(data.audio_b64), c => c.charCodeAt(0));
+            const ctx = new AudioContext();
+            const buf = await ctx.decodeAudioData(bytes.buffer);
+            const src = ctx.createBufferSource();
+            src.buffer = buf;
+            src.connect(ctx.destination);
+            src.start(0);
+            src.onended = () => ctx.close();
+        } catch (_) {}
+    }, [autoTts, ttsProvider, elevenVoiceId, deepgramVoice]);
+
+    // Poll visitor count every 30s
+    useEffect(() => {
+        const fetchCount = () => {
+            fetch(`${API_BASE}/api/bots/${botId}/visitors`)
+                .then(r => r.ok ? r.json() : null)
+                .then(d => { if (d?.count != null) setVisitorCount(d.count); })
+                .catch(() => {});
+        };
+        fetchCount();
+        const iv = setInterval(fetchCount, 30_000);
+        return () => clearInterval(iv);
+    }, [botId]);
 
     // Call state
     const [isCallMode, setIsCallMode] = useState(false);
@@ -371,8 +422,7 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
                 const node = new AudioWorkletNode(captureCtx, "pcm16-proc");
                 workletNodeRef.current = node;
                 node.port.onmessage = (e) => {
-                    // Mute mic while bot is playing — prevents coughs/noise from triggering barge-in
-                    if (!isBotSpeakingRef.current && ws.readyState === WebSocket.OPEN) ws.send(e.data);
+                    if (ws.readyState === WebSocket.OPEN) ws.send(e.data);
                 };
                 source.connect(node);
             } catch {
@@ -381,7 +431,7 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
                 const spn = captureCtx.createScriptProcessor(4096, 1, 1);
                 workletNodeRef.current = spn;
                 spn.onaudioprocess = (e) => {
-                    if (isBotSpeakingRef.current || ws.readyState !== WebSocket.OPEN) return;
+                    if (ws.readyState !== WebSocket.OPEN) return;
                     const f32 = e.inputBuffer.getChannelData(0);
                     const ratio = captureCtx.sampleRate / 24000;
                     const out = new Int16Array(Math.floor(f32.length / ratio));
@@ -448,6 +498,10 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
 
                 if (msg.type === "error") {
                     console.error("[Call] backend error:", msg.message);
+                }
+
+                if (msg.type === "call_ended") {
+                    endCall(false);
                 }
             } catch (_) {}
         };
@@ -581,10 +635,25 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
                             setMessages((prev) =>
                                 prev.map((m) =>
                                     m.id === streamingId
-                                        ? { ...m, text: event.reply, formatType: event.format_type }
+                                        ? { ...m, text: event.reply, formatType: event.format_type, kbImages: event.kb_images?.length ? event.kb_images : undefined }
                                         : m
                                 )
                             );
+                            // Subtle reply sound
+                            try {
+                                const ctx = new AudioContext();
+                                const osc = ctx.createOscillator();
+                                const gain = ctx.createGain();
+                                osc.connect(gain); gain.connect(ctx.destination);
+                                osc.frequency.setValueAtTime(880, ctx.currentTime);
+                                osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.12);
+                                gain.gain.setValueAtTime(0.08, ctx.currentTime);
+                                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+                                osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.15);
+                                osc.onended = () => ctx.close();
+                            } catch (_) {}
+                            // Auto-TTS readout
+                            playTts(event.reply);
                         }
                     } catch {
                         // Malformed SSE line — skip
@@ -654,7 +723,15 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
                     </div>
                     <div>
                         <h3 className="text-lg font-bold text-white tracking-tight">{botName}</h3>
-                        <p className={`text-xs font-semibold uppercase tracking-wider ${botId.includes("restaurant") ? "text-rose-400" : "text-blue-400"}`}>{botRole}</p>
+                        <div className="flex items-center gap-2">
+                            <p className={`text-xs font-semibold uppercase tracking-wider ${botId.includes("restaurant") ? "text-rose-400" : "text-blue-400"}`}>{botRole}</p>
+                            {visitorCount > 1 && (
+                                <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-400/80 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded-full">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
+                                    {visitorCount} online
+                                </span>
+                            )}
+                        </div>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -804,6 +881,22 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
                                                 <span className="font-medium">{msg.text}</span>
                                             )}
                                         </div>
+                                        {/* KB images from knowledge base */}
+                                        {msg.sender === "bot" && msg.kbImages && msg.kbImages.length > 0 && (
+                                            <div className="relative z-10 mt-3 grid grid-cols-2 gap-2">
+                                                {msg.kbImages.map((img, i) => (
+                                                    <a key={i} href={img.url} target="_blank" rel="noreferrer" className="block group/img">
+                                                        <img
+                                                            src={img.url}
+                                                            alt={img.alt}
+                                                            className="w-full h-28 object-cover rounded-xl border border-white/10 shadow-lg group-hover/img:scale-[1.02] transition-transform duration-200"
+                                                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                                                        />
+                                                        {img.alt && <p className="text-[11px] text-gray-400 mt-1 truncate px-0.5">{img.alt}</p>}
+                                                    </a>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                 </motion.div>
                             ))}
