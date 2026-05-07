@@ -32,13 +32,14 @@ jobs:
             mkdir -p "$APP_DIR"
             cd "$APP_DIR"
 
-            echo "📦 Syncing repo (main branch)..."
+            DEPLOY_BRANCH="${{ github.ref_name }}"
+            echo "📦 Syncing repo (branch: $DEPLOY_BRANCH)..."
             if [ ! -d ".git" ]; then
               git init
               git remote add origin https://github.com/${{ github.repository }}.git
             fi
-            git fetch origin main
-            git reset --hard origin/main
+            git fetch origin "$DEPLOY_BRANCH"
+            git reset --hard "origin/$DEPLOY_BRANCH"
 
             echo "🐍 Installing Python deps..."
             cd backend
@@ -95,13 +96,14 @@ jobs:
             mkdir -p "$APP_DIR"
             cd "$APP_DIR"
 
-            echo "📦 Syncing repo (main branch)..."
+            DEPLOY_BRANCH="${{ github.ref_name }}"
+            echo "📦 Syncing repo (branch: $DEPLOY_BRANCH)..."
             if [ ! -d ".git" ]; then
               git init
               git remote add origin https://github.com/${{ github.repository }}.git
             fi
-            git fetch origin main
-            git reset --hard origin/main
+            git fetch origin "$DEPLOY_BRANCH"
+            git reset --hard "origin/$DEPLOY_BRANCH"
 
             echo "📦 Installing Node dependencies..."
             cd frontend
