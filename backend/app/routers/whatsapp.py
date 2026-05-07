@@ -229,19 +229,31 @@ async def _handle_message(
     # Mark as read
     await _mark_read(phone_number_id, message_id, effective_token)
 
-    # Save lead if booking was confirmed
-    if "✅ Booking confirmed" in reply:
+    # Upsert lead for this WhatsApp session (every conversation, not just bookings)
+    if supabase:
         try:
-            supabase.table("leads").insert({
-                "bot_id": bot_id,
-                "session_id": session_id,
-                "summary": f"WhatsApp booking from {from_number}",
-                "score": 90,
-                "type": "booking",
-                "channel": "whatsapp",
-            }).execute()
+            is_booking = "✅ Booking confirmed" in reply
+            # Check if lead already exists for this session
+            existing = supabase.table("leads").select("id,type").eq("session_id", session_id).limit(1).execute()
+            if existing.data:
+                # Only upgrade type/score if this is a booking confirmation
+                if is_booking:
+                    supabase.table("leads").update({
+                        "score": 90,
+                        "type": "booking",
+                        "summary": f"WhatsApp booking confirmed from {from_number}",
+                    }).eq("session_id", session_id).execute()
+            else:
+                # New session — create inquiry lead
+                supabase.table("leads").insert({
+                    "bot_id": bot_id,
+                    "session_id": session_id,
+                    "summary": f"WhatsApp enquiry from {from_number}",
+                    "score": 50 if not is_booking else 90,
+                    "type": "booking" if is_booking else "inquiry",
+                }).execute()
         except Exception as e:
-            logger.warning("[WA] lead insert error: %s", e)
+            logger.warning("[WA] lead upsert error: %s", e)
 
     # Persist log
     _save_log(bot_id, session_id, message_text, reply, supabase)
@@ -281,17 +293,16 @@ async def _download_media(media_id: str, token: str) -> tuple[bytes, str]:
 
 
 async def _transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
-    """Transcribe audio bytes using OpenAI Whisper.
-
-    Returns the transcribed text string (may be empty).
-    """
-    # Determine file extension from mime type; default to ogg
+    """Transcribe audio bytes using OpenAI Whisper."""
+    if not openai_client:
+        logger.warning("[WA] OpenAI client not initialised — cannot transcribe")
+        return ""
     ext = _AUDIO_EXT_MAP.get(mime_type.strip().lower(), "ogg")
-    buf = io.BytesIO(audio_bytes)
-    buf.name = f"audio.{ext}"
+    # Pass as (filename, bytes, content_type) tuple — required by OpenAI SDK multipart upload
+    file_tuple = (f"audio.{ext}", audio_bytes, mime_type.split(";")[0].strip())
     result = await openai_client.audio.transcriptions.create(
         model="whisper-1",
-        file=buf,
+        file=file_tuple,
     )
     return (result.text or "").strip()
 
