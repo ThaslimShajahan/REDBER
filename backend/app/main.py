@@ -34,7 +34,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import time
 
-from .routers import bots, admin, ws_call
+from .routers import bots, admin, ws_call, whatsapp
 
 app = FastAPI(title="PersonaAI MVP Backend")
 
@@ -72,6 +72,7 @@ app.add_middleware(
 app.include_router(bots.router)
 app.include_router(admin.router)
 app.include_router(ws_call.router)
+app.include_router(whatsapp.router)
 
 
 @app.get("/")

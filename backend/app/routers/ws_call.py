@@ -84,11 +84,67 @@ async def _fetch_kb_context(bot_id: str, supabase) -> str:
     return ""
 
 
+async def _save_agent_id(bot_id: str, agent_id: str, supabase) -> None:
+    if not supabase:
+        return
+    try:
+        br = supabase.table("bots").select("persona_config").eq("id", bot_id).execute()
+        cfg = (br.data[0].get("persona_config") or {}) if br.data else {}
+        cfg["elevenlabs_agent_id"] = agent_id
+        supabase.table("bots").update({"persona_config": cfg}).eq("id", bot_id).execute()
+    except Exception as e:
+        logger.warning("[ElevenWS] save agent_id: %s", e)
+
+
+_AGENT_CREATE_CONFIG = {
+    "conversation_config": {
+        "asr": {
+            "quality": "high",
+            "provider": "elevenlabs",
+            "user_input_audio_format": "pcm_24000",
+        },
+        "tts": {
+            "model_id": "eleven_turbo_v2",
+            "agent_output_audio_format": "pcm_24000",
+            "optimize_streaming_latency": 4,
+            "stability": 0.5,
+            "similarity_boost": 0.75,
+        },
+        "turn": {
+            "turn_timeout": 3,
+            "silence_end_call_timeout": 300,
+            "turn_eagerness": "high",
+        },
+        "agent": {
+            "prompt": {"prompt": "You are a helpful assistant."},
+            "language": "en",
+            "first_message": "",
+        },
+    },
+    "platform_settings": {
+        "overrides": {
+            "conversation_config_override": {
+                "agent": {
+                    "first_message": True,
+                    "language": True,
+                    "prompt": {"prompt": True},
+                },
+                "tts": {"voice_id": True},
+            }
+        }
+    },
+}
+
+
 async def _get_or_create_elevenlabs_agent(bot_id: str, eleven_key: str, supabase) -> str:
     """
-    Returns the ElevenLabs agent_id for this bot, creating one via the API if needed.
-    Auto-created agent_id is persisted back to persona_config so it reuses next call.
+    Returns the ElevenLabs agent_id for this bot:
+    1. DB cache hit → return immediately
+    2. Try to create a new agent via API
+    3. If creation forbidden (missing Write permission), fall back to listing
+       existing agents and finding one named redber_{bot_id}
     """
+    # 1. Check DB cache
     if supabase:
         try:
             bot_res = supabase.table("bots").select("persona_config").eq("id", bot_id).execute()
@@ -99,69 +155,59 @@ async def _get_or_create_elevenlabs_agent(bot_id: str, eleven_key: str, supabase
         except Exception as e:
             logger.warning("[ElevenWS] fetch stored agent_id: %s", e)
 
-    logger.info("[ElevenWS] Auto-creating ElevenLabs agent for bot=%s", bot_id)
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+    agent_name = f"redber_{bot_id}"
+    headers = {"xi-api-key": eleven_key, "Content-Type": "application/json"}
+
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        # 2. Try to create
+        logger.info("[ElevenWS] Creating ElevenLabs agent for bot=%s", bot_id)
+        try:
             resp = await client.post(
                 "https://api.elevenlabs.io/v1/convai/agents/create",
-                headers={"xi-api-key": eleven_key, "Content-Type": "application/json"},
-                json={
-                    "name": f"redber_{bot_id}",
-                    "conversation_config": {
-                        "asr": {
-                            "quality": "high",
-                            "provider": "elevenlabs",
-                            "user_input_audio_format": "pcm_24000",
-                        },
-                        "tts": {
-                            "model_id": "eleven_turbo_v2",
-                            "agent_output_audio_format": "pcm_24000",
-                            "optimize_streaming_latency": 4,
-                            "stability": 0.5,
-                            "similarity_boost": 0.75,
-                        },
-                        "turn": {
-                            "turn_timeout": 3,
-                            "silence_end_call_timeout": 300,
-                            "turn_eagerness": "high",
-                        },
-                        "agent": {
-                            "prompt": {"prompt": "You are a helpful assistant."},
-                            "language": "en",
-                            "first_message": "",
-                        },
-                    },
-                    "platform_settings": {
-                        "overrides": {
-                            "conversation_config_override": {
-                                "agent": {
-                                    "first_message": True,
-                                    "language": True,
-                                    "prompt": {"prompt": True},
-                                },
-                                "tts": {"voice_id": True},
-                            }
-                        }
-                    },
-                },
+                headers=headers,
+                json={"name": agent_name, **_AGENT_CREATE_CONFIG},
             )
             if resp.status_code in (200, 201):
                 new_id = resp.json().get("agent_id", "")
                 if new_id:
                     logger.info("[ElevenWS] Created agent %s for bot=%s", new_id, bot_id)
-                    if supabase:
-                        try:
-                            br = supabase.table("bots").select("persona_config").eq("id", bot_id).execute()
-                            cfg = (br.data[0].get("persona_config") or {}) if br.data else {}
-                            cfg["elevenlabs_agent_id"] = new_id
-                            supabase.table("bots").update({"persona_config": cfg}).eq("id", bot_id).execute()
-                        except Exception as e:
-                            logger.warning("[ElevenWS] save new agent_id: %s", e)
+                    await _save_agent_id(bot_id, new_id, supabase)
                     return new_id
+            elif resp.status_code in (401, 403):
+                logger.warning("[ElevenWS] Agent create forbidden (%s) — will search existing agents", resp.status_code)
             else:
-                logger.error("[ElevenWS] agent create failed: %s %s", resp.status_code, resp.text[:300])
-    except Exception as e:
-        logger.error("[ElevenWS] agent create error: %s", e)
+                logger.error("[ElevenWS] Agent create failed: %s %s", resp.status_code, resp.text[:300])
+        except Exception as e:
+            logger.error("[ElevenWS] Agent create error: %s", e)
+
+        # 3. Fallback: list agents and find by name (works even without Write permission)
+        logger.info("[ElevenWS] Searching existing agents for name=%s", agent_name)
+        try:
+            page = 1
+            while True:
+                list_resp = await client.get(
+                    "https://api.elevenlabs.io/v1/convai/agents",
+                    headers=headers,
+                    params={"page_size": 100, "page": page},
+                )
+                if list_resp.status_code != 200:
+                    logger.error("[ElevenWS] Agent list failed: %s", list_resp.status_code)
+                    break
+                data = list_resp.json()
+                agents = data.get("agents", [])
+                for a in agents:
+                    if a.get("name") == agent_name:
+                        found_id = a.get("agent_id", "")
+                        if found_id:
+                            logger.info("[ElevenWS] Found existing agent %s for bot=%s", found_id, bot_id)
+                            await _save_agent_id(bot_id, found_id, supabase)
+                            return found_id
+                if not data.get("has_more"):
+                    break
+                page += 1
+        except Exception as e:
+            logger.error("[ElevenWS] Agent list error: %s", e)
+
     return ""
 
 
@@ -221,26 +267,42 @@ def _build_eleven_system_prompt(base_prompt: str, config: dict) -> str:
         booking_rule = "Collect Name, Phone, and preferred time — one question at a time."
 
     now = datetime.datetime.now()
+    today_str = now.strftime("%A, %B %d, %Y")
+    time_str  = now.strftime("%I:%M %p")
 
     call_rules = (
-        "━━━ VOICE CALL RULES — MANDATORY, HIGHEST PRIORITY ━━━\n\n"
-        "LANGUAGE: ENGLISH ONLY. Always respond in English. Never switch to any other language, "
-        "even if the caller speaks in another language.\n\n"
-        "FILLERS — start EVERY response with a natural filler (vary, never repeat the same twice):\n"
-        '  "Sure!", "Oh absolutely!", "Of course!", "Got it!", "Right, so...", "Hmm let me see...",\n'
+        # Date pinned at the very top so it's the first thing the LLM sees
+        f"[SYSTEM — CURRENT DATE & TIME]\n"
+        f"TODAY IS {today_str}. THE TIME IS {time_str}.\n"
+        f"This is provided by the live system. ALWAYS use this date. "
+        f"NEVER say it is any other date or year. {today_str} is the correct date right now.\n\n"
+
+        "━━━ VOICE CALL RULES — ALWAYS FOLLOW ━━━\n\n"
+        "LANGUAGE: ENGLISH ONLY. Respond in English always, no exceptions.\n\n"
+
+        "FILLERS — start EVERY reply with a varied natural filler:\n"
+        '  "Sure!", "Oh absolutely!", "Of course!", "Got it!", "Right so...", "Hmm let me see...",\n'
         '  "Great question!", "Ah yes!", "Certainly!", "Yeah for sure!", "Oh nice!", "Happy to help!",\n'
-        '  "Let me check on that...", "One moment!", "Sounds good!"\n\n'
-        "RESPONSE LENGTH: 1–3 short sentences max. No bullet points, numbered lists, or markdown.\n\n"
-        "INTERRUPTIONS: If the caller speaks while you're responding, stop immediately and listen.\n\n"
-        f"DATE/TIME: TODAY {now.strftime('%A %B %d %Y')} | NOW {now.strftime('%I:%M %p')} — never book past dates.\n\n"
+        '  "Let me check on that...", "One moment!", "Sounds good!", "Oh yeah!"\n'
+        "  Vary them — never use the same filler twice in a row.\n\n"
+
+        "BRIEF SOUNDS: If the caller says 'uh', 'um', 'hmm', 'yeah', or makes any brief sound, "
+        "treat it as them wanting to speak. Respond with 'Yeah?' or 'Go ahead' or 'I'm listening'.\n\n"
+
+        "RESPONSE LENGTH: 1–3 short sentences only. No bullets, lists, or markdown — spoken audio.\n\n"
+
+        "INTERRUPTIONS: If the caller speaks while you're talking, stop immediately and listen.\n\n"
+
+        f"DATE: Today is {today_str}. Never book past dates.\n\n"
         f"BOOKING: {booking_rule} Once confirmed, repeat back warmly and say [SYSTEM_BOOKING_CONFIRMED].\n\n"
-        "NEVER say 'How can I assist you today?' — robotic. Never claim to be an AI unless asked directly.\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+        "NEVER say 'How can I assist you today?' — robotic. Never claim to be an AI unless asked.\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         "YOUR PERSONA & KNOWLEDGE:\n"
     )
 
-    # Rules are ~900 chars; allow up to 5100 for persona/KB so total stays within 6000
-    trimmed_base = base_prompt[:5100] if len(base_prompt) > 5100 else base_prompt
+    # Rules are ~1100 chars; allow 4900 for persona/KB so total stays within 6000
+    trimmed_base = base_prompt[:4900] if len(base_prompt) > 4900 else base_prompt
     return call_rules + trimmed_base
 
 

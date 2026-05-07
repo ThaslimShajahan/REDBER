@@ -350,9 +350,12 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
     const workletNodeRef = useRef<AudioWorkletNode | ScriptProcessorNode | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const audioPlayerRef = useRef<PCM16Player | null>(null);
-    const isBotSpeakingRef = useRef(false);   // gates mic → WS while bot audio plays
+    const isBotSpeakingRef = useRef(false);
     const isCallModeRef = useRef(false);
     const callStatusRef = useRef<CallStatus>("idle");
+    const ringAudioRef = useRef<HTMLAudioElement | null>(null);
+    const connectAudioRef = useRef<HTMLAudioElement | null>(null);
+    const endAudioRef = useRef<HTMLAudioElement | null>(null);
 
     useEffect(() => {
         isCallModeRef.current = isCallMode;
@@ -371,6 +374,7 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
     // ── WebSocket Call Logic ────────────────────────────────────────────────
     const startCall = useCallback(async () => {
         setIsCallMode(true);
+        isCallModeRef.current = true;   // sync — don't wait for useEffect (prevents ring not stopping on fast error)
         setCallStatus("connecting");
         setLiveTranscript("");
 
@@ -392,6 +396,15 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
             setCallStatus("idle");
             return;
         }
+
+        // Start ringing sound (loops until call connects)
+        try {
+            const ring = new Audio("/sounds/phone_ring.mp3");
+            ring.loop = true;
+            ring.volume = 0.25;
+            ringAudioRef.current = ring;
+            await ring.play();
+        } catch (_) {}
 
         // Init PCM16 player (plays audio received from OpenAI Realtime at 24 kHz)
         const player = new PCM16Player();
@@ -423,6 +436,19 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
                 workletNodeRef.current = node;
                 node.port.onmessage = (e) => {
                     if (ws.readyState === WebSocket.OPEN) ws.send(e.data);
+                    // Client-side instant interrupt: stop bot playback the moment user speaks
+                    // without waiting for ElevenLabs server round-trip (~300-600ms latency)
+                    if (callStatusRef.current === "speaking") {
+                        const samples = new Int16Array(e.data as ArrayBuffer);
+                        let sum = 0;
+                        for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+                        const rms = Math.sqrt(sum / samples.length);
+                        if (rms > 700) {
+                            audioPlayerRef.current?.interrupt();
+                            isBotSpeakingRef.current = false;
+                            if (isCallModeRef.current) setCallStatusSafe("listening");
+                        }
+                    }
                 };
                 source.connect(node);
             } catch {
@@ -440,6 +466,17 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
                         out[i] = s < 0 ? s * 32768 : s * 32767;
                     }
                     ws.send(out.buffer);
+                    // Client-side instant interrupt (fallback path)
+                    if (callStatusRef.current === "speaking") {
+                        let sum = 0;
+                        for (let i = 0; i < out.length; i++) sum += out[i] * out[i];
+                        const rms = Math.sqrt(sum / out.length);
+                        if (rms > 700) {
+                            audioPlayerRef.current?.interrupt();
+                            isBotSpeakingRef.current = false;
+                            if (isCallModeRef.current) setCallStatusSafe("listening");
+                        }
+                    }
                 };
                 source.connect(spn);
                 spn.connect(captureCtx.destination);
@@ -460,6 +497,14 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
                 const msg = JSON.parse(event.data as string);
 
                 if (msg.type === "session_ready") {
+                    // Stop ringing, play pickup click
+                    try { ringAudioRef.current?.pause(); ringAudioRef.current = null; } catch (_) {}
+                    try {
+                        const pickup = new Audio("/sounds/call_connect.mp3");
+                        pickup.volume = 0.7;
+                        connectAudioRef.current = pickup;
+                        pickup.play().catch(() => {});
+                    } catch (_) {}
                     setCallStatusSafe("listening");
                 }
 
@@ -521,6 +566,17 @@ export default function Chatbot({ botId, botName, botRole, botAvatar, themeColor
         setIsCallMode(false);
         setCallStatusSafe("idle");
         setLiveTranscript("");
+
+        // Stop ringing if still active (e.g. user hung up before connect)
+        try { ringAudioRef.current?.pause(); ringAudioRef.current = null; } catch (_) {}
+
+        // Play hangup sound
+        try {
+            const end = new Audio("/sounds/call_end.mp3");
+            end.volume = 0.6;
+            endAudioRef.current = end;
+            end.play();
+        } catch (_) {}
 
         // Disconnect capture worklet and close capture context
         try { workletNodeRef.current?.disconnect(); } catch (_) {}

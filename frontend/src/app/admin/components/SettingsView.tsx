@@ -1,10 +1,135 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { X, Trash2, Activity, MessageSquare, Zap, Clock, AlertTriangle } from "lucide-react";
 import { motion } from "framer-motion";
 import { API_BASE, authFetch } from "../../../lib/api";
 import PageContentEditor from "./PageContentEditor";
 import PersonaConfigEditor from "./PersonaConfigEditor";
 import { useAuth } from "../context/AuthContext";
+
+// ─── Shared ElevenLabs Voice Picker ──────────────────────────────────────────
+function ElevenVoicePicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+    const [voices, setVoices] = useState<any[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [loaded, setLoaded] = useState(false);
+    const [loadError, setLoadError] = useState("");
+    const [search, setSearch] = useState("");
+    const [open, setOpen] = useState(false);
+    const [previewUrl, setPreviewUrl] = useState("");
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+
+    const loadVoices = useCallback(async () => {
+        if (loaded && !loadError) { setOpen(true); return; }
+        setLoading(true);
+        setLoadError("");
+        try {
+            const res = await authFetch(`${API_BASE}/api/admin/elevenlabs/voices`);
+            const data = await res.json();
+            if (!res.ok) {
+                setLoadError(data.detail || `Error ${res.status}`);
+                setOpen(true);
+                return;
+            }
+            setVoices(Array.isArray(data) ? data : []);
+            setLoaded(true);
+            setOpen(true);
+        } catch (e: any) {
+            setLoadError(e.message || "Network error");
+            setOpen(true);
+        } finally { setLoading(false); }
+    }, [loaded, loadError]);
+
+    const playPreview = (url: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; setPreviewUrl(""); }
+        if (previewUrl === url) return;
+        const a = new Audio(url);
+        a.play();
+        a.onended = () => { audioRef.current = null; setPreviewUrl(""); };
+        audioRef.current = a;
+        setPreviewUrl(url);
+    };
+
+    const filtered = voices.filter(v =>
+        v.name.toLowerCase().includes(search.toLowerCase()) ||
+        (v.labels?.accent || "").toLowerCase().includes(search.toLowerCase()) ||
+        (v.labels?.language || "").toLowerCase().includes(search.toLowerCase())
+    );
+    const selected = voices.find(v => v.voice_id === value);
+
+    return (
+        <div className="relative">
+            <div className="flex gap-2">
+                <button type="button" onClick={loadVoices} disabled={loading}
+                    className="flex-1 flex items-center justify-between bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-white hover:border-purple-500/60 transition-colors text-left">
+                    <span className={selected ? "font-semibold" : "text-gray-500"}>
+                        {loading ? "Loading voices…" : selected ? selected.name : "Select a voice…"}
+                    </span>
+                    <span className="text-gray-500 ml-2 text-xs">{loading ? "⟳" : "▾"}</span>
+                </button>
+                {value && (
+                    <button type="button" onClick={() => onChange("")}
+                        className="px-3 text-gray-600 hover:text-rose-400 transition-colors">✕</button>
+                )}
+            </div>
+            {value && !selected && <p className="text-[10px] text-gray-600 mt-1 font-mono">ID: {value}</p>}
+
+            {open && (
+                <div className="absolute z-50 mt-1 w-full bg-[#12121e] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+                    <div className="p-2 border-b border-white/5">
+                        <input autoFocus
+                            className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none"
+                            placeholder="Search by name, accent, language…"
+                            value={search} onChange={e => setSearch(e.target.value)} />
+                    </div>
+                    {loadError && (
+                        <div className="px-3 py-2.5 bg-rose-950/60 border-b border-rose-500/20">
+                            <p className="text-[11px] text-rose-300 font-semibold">Failed to load voices</p>
+                            <p className="text-[10px] text-rose-400/80 mt-0.5">{loadError}</p>
+                            {loadError.includes("voices_read") && (
+                                <p className="text-[10px] text-amber-400 mt-1">→ Go to elevenlabs.io → Settings → API Keys → enable <strong>voices_read</strong> permission</p>
+                            )}
+                            <div className="mt-2">
+                                <p className="text-[10px] text-gray-400 mb-1">Or enter voice ID manually:</p>
+                                <input
+                                    className="w-full bg-black/50 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white outline-none"
+                                    placeholder="Paste voice ID e.g. 4O1sYUnmtThcBoSBrri7"
+                                    onKeyDown={e => { if (e.key === "Enter") { onChange((e.target as HTMLInputElement).value.trim()); setOpen(false); } }}
+                                />
+                                <p className="text-[9px] text-gray-600 mt-0.5">Press Enter to confirm</p>
+                            </div>
+                        </div>
+                    )}
+                    <div className="max-h-56 overflow-y-auto divide-y divide-white/5">
+                        {!loadError && filtered.length === 0 && <div className="px-4 py-3 text-xs text-gray-500">No voices found</div>}
+                        {filtered.map(v => (
+                            <div key={v.voice_id}
+                                onClick={() => { onChange(v.voice_id); setOpen(false); setSearch(""); }}
+                                className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-white/5 transition-colors ${value === v.voice_id ? "bg-purple-900/30" : ""}`}>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-semibold text-white truncate">{v.name}</p>
+                                    <p className="text-[10px] text-gray-500 truncate">
+                                        {[v.labels?.accent, v.labels?.language, v.category].filter(Boolean).join(" · ")}
+                                    </p>
+                                </div>
+                                {value === v.voice_id && <span className="text-purple-400 text-xs">✓</span>}
+                                {v.preview_url && (
+                                    <button type="button" onClick={e => playPreview(v.preview_url, e)}
+                                        className={`shrink-0 text-[10px] px-2 py-1 rounded-lg border transition-colors ${previewUrl === v.preview_url ? "bg-purple-600 text-white border-purple-500" : "bg-white/5 text-gray-400 border-white/10 hover:text-white"}`}>
+                                        {previewUrl === v.preview_url ? "▐▐" : "▶"}
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                    <div className="p-2 border-t border-white/5">
+                        <button type="button" onClick={() => setOpen(false)}
+                            className="w-full text-[10px] text-gray-500 hover:text-white transition-colors py-1">Close</button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
 
 export default function SettingsView() {
     const { user } = useAuth();
@@ -367,80 +492,87 @@ export default function SettingsView() {
                                     </>
                                 )}
                                  {configureTab === "voice" && (
-                                    <div className="space-y-6">
+                                    <div className="space-y-5">
+                                        {/* Enable toggle */}
                                         <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-4 flex items-center justify-between">
                                             <div>
                                                 <h3 className="text-sm font-bold text-white">Enable Real-time Voice Calling</h3>
-                                                <p className="text-xs text-gray-500">Allow users to start AI voice calls with this bot</p>
+                                                <p className="text-xs text-gray-500">Show the phone button on this bot's chat</p>
                                             </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => setEditingBot({ 
-                                                    ...editingBot, 
-                                                    persona_config: { 
-                                                        ...editingBot.persona_config, 
-                                                        voice_enabled: !editingBot.persona_config?.voice_enabled 
-                                                    } 
-                                                })}
-                                                className={`relative w-12 h-7 rounded-full transition ${editingBot.persona_config?.voice_enabled ? 'bg-purple-500' : 'bg-gray-600'}`}
-                                            >
+                                            <button type="button"
+                                                onClick={() => setEditingBot({ ...editingBot, persona_config: { ...editingBot.persona_config, voice_enabled: !editingBot.persona_config?.voice_enabled } })}
+                                                className={`relative w-12 h-7 rounded-full transition ${editingBot.persona_config?.voice_enabled ? 'bg-purple-500' : 'bg-gray-600'}`}>
                                                 <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-md transform transition-transform duration-300 ${editingBot.persona_config?.voice_enabled ? 'translate-x-5' : 'translate-x-0'}`} />
                                             </button>
                                         </div>
 
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {editingBot.persona_config?.voice_enabled && (<>
+                                            {/* Provider selector */}
                                             <div className="space-y-2">
-                                                <label className="block text-sm font-medium text-gray-400">Deepgram Voice Model</label>
-                                                <select 
-                                                    value={editingBot.persona_config?.voice_model || "aura-asteria-en"} 
-                                                    onChange={e => setEditingBot({
-                                                        ...editingBot,
-                                                        persona_config: { ...editingBot.persona_config, voice_model: e.target.value }
-                                                    })}
-                                                    className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-purple-500 transition-colors appearance-none"
-                                                >
-                                                    <optgroup label="Female">
-                                                        <option value="aura-asteria-en">Asteria (Default)</option>
-                                                        <option value="aura-luna-en">Luna</option>
-                                                        <option value="aura-stella-en">Stella</option>
-                                                        <option value="aura-athena-en">Athena</option>
-                                                        <option value="aura-hera-en">Hera</option>
-                                                    </optgroup>
-                                                    <optgroup label="Male">
-                                                        <option value="aura-orion-en">Orion</option>
-                                                        <option value="aura-arcas-en">Arcas</option>
-                                                        <option value="aura-perseus-en">Perseus</option>
-                                                        <option value="aura-angus-en">Angus</option>
-                                                        <option value="aura-orpheus-en">Orpheus</option>
-                                                        <option value="aura-helios-en">Helios</option>
-                                                        <option value="aura-zeus-en">Zeus</option>
-                                                    </optgroup>
-                                                </select>
-                                                <p className="text-[10px] text-gray-500">Choose the AI personality voice for real-time speech synthesis.</p>
-                                            </div>
-
-                                            <div className="space-y-2">
-                                                <label className="block text-sm font-medium text-gray-400">Response Speed (Latency)</label>
-                                                <div className="bg-black/50 border border-white/10 rounded-xl p-4">
-                                                    <div className="flex justify-between text-[10px] text-gray-500 mb-1 font-bold italic">
-                                                        <span>ULTRA LOW LATENCY</span>
-                                                        <span className="text-purple-400">DEEPGRAM AURA</span>
-                                                    </div>
-                                                    <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                                                        <div className="h-full w-[95%] bg-gradient-to-r from-purple-500 to-indigo-500"></div>
-                                                    </div>
-                                                    <p className="text-[10px] text-gray-400 mt-2 italic">~150ms TTFB enabled for this bot.</p>
+                                                <label className="block text-sm font-medium text-gray-400">Voice Provider</label>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    {[
+                                                        { id: "openai", label: "OpenAI Realtime", sub: "English voices, ultra-low latency" },
+                                                        { id: "elevenlabs", label: "ElevenLabs", sub: "Hindi, Indian & 30+ language voices" },
+                                                    ].map(opt => (
+                                                        <button key={opt.id} type="button"
+                                                            onClick={() => setEditingBot({ ...editingBot, persona_config: { ...editingBot.persona_config, voice_provider: opt.id } })}
+                                                            className={`p-3 rounded-xl border text-left transition-all ${(editingBot.persona_config?.voice_provider || "openai") === opt.id ? "border-purple-500 bg-purple-500/15" : "border-white/10 bg-black/30 hover:border-white/20"}`}>
+                                                            <p className="text-sm font-bold text-white">{opt.label}</p>
+                                                            <p className="text-[10px] text-gray-500 mt-0.5">{opt.sub}</p>
+                                                        </button>
+                                                    ))}
                                                 </div>
                                             </div>
-                                        </div>
+
+                                            {/* OpenAI config */}
+                                            {(!editingBot.persona_config?.voice_provider || editingBot.persona_config?.voice_provider === "openai") && (
+                                                <div className="space-y-2">
+                                                    <label className="block text-sm font-medium text-gray-400">OpenAI Voice</label>
+                                                    <select
+                                                        value={editingBot.persona_config?.realtime_voice || "alloy"}
+                                                        onChange={e => setEditingBot({ ...editingBot, persona_config: { ...editingBot.persona_config, realtime_voice: e.target.value } })}
+                                                        className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-purple-500 transition-colors appearance-none">
+                                                        <option value="alloy">Alloy (neutral)</option>
+                                                        <option value="shimmer">Shimmer (warm female)</option>
+                                                        <option value="echo">Echo (male)</option>
+                                                        <option value="verse">Verse (expressive)</option>
+                                                        <option value="ballad">Ballad (calm)</option>
+                                                        <option value="ash">Ash (direct)</option>
+                                                        <option value="coral">Coral (warm female)</option>
+                                                        <option value="sage">Sage (thoughtful)</option>
+                                                    </select>
+                                                </div>
+                                            )}
+
+                                            {/* ElevenLabs config */}
+                                            {editingBot.persona_config?.voice_provider === "elevenlabs" && (
+                                                <div className="space-y-4">
+                                                    <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3">
+                                                        <p className="text-[11px] text-emerald-400 font-semibold">Agent auto-provisioned</p>
+                                                        <p className="text-[10px] text-gray-500 mt-0.5">A dedicated ElevenLabs agent is created automatically on first call. No manual setup needed.</p>
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <label className="block text-sm font-medium text-gray-400">Voice</label>
+                                                        <ElevenVoicePicker
+                                                            value={editingBot.persona_config?.elevenlabs_voice_id || ""}
+                                                            onChange={id => setEditingBot({ ...editingBot, persona_config: { ...editingBot.persona_config, elevenlabs_voice_id: id } })}
+                                                        />
+                                                        <p className="text-[10px] text-gray-500">Click to load your ElevenLabs voices — includes preview playback.</p>
+                                                    </div>
+                                                    <div className="bg-black/30 border border-white/5 rounded-xl p-3 flex justify-between text-[10px]">
+                                                        <span className="text-gray-500 font-bold uppercase tracking-widest">Latency</span>
+                                                        <span className="text-emerald-400 font-bold">eleven_turbo_v2_5 · optimize=4 · ~300ms</span>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </>)}
 
                                         <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex gap-4">
-                                            <div className="p-2 bg-amber-500/20 rounded-xl h-fit">
-                                                <Zap size={18} className="text-amber-400" />
-                                            </div>
+                                            <div className="p-2 bg-amber-500/20 rounded-xl h-fit"><Zap size={18} className="text-amber-400" /></div>
                                             <div>
                                                 <h4 className="text-sm font-bold text-amber-400">Voice Usage Warning</h4>
-                                                <p className="text-xs text-gray-400 leading-relaxed mt-1">Real-time voice calls consume significantly more tokens and compute resources. Each minute of calling is approximately equivalent to 30-50 text messages in terms of cost.</p>
+                                                <p className="text-xs text-gray-400 leading-relaxed mt-1">Real-time voice calls use significantly more compute. Each minute ≈ 30–50 text messages in cost.</p>
                                             </div>
                                         </div>
                                     </div>
