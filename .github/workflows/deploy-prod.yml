@@ -71,13 +71,18 @@ jobs:
             printf 'WHATSAPP_VERIFY_TOKEN=%s\n'    "${{ secrets.WHATSAPP_VERIFY_TOKEN }}"  >> .env
             printf 'WHATSAPP_DEFAULT_BOT_ID=%s\n'  "${{ secrets.WHATSAPP_DEFAULT_BOT_ID }}" >> .env
 
-            echo "♻️  Restarting backend via PM2..."
+            echo "♻️  Restarting backend (CloudPanel-managed process)..."
+            # Backend is managed by CloudPanel as redber-api user — kill it and it auto-respawns
+            # PM2 must NOT manage the backend; it conflicts with CloudPanel on port 9090
             pm2 delete redber-backend-prod 2>/dev/null || true
             pm2 delete redber-backend 2>/dev/null || true
-            pm2 start "venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 9090" \
-              --name redber-backend-prod \
-              --cwd "$(pwd)"
-            pm2 save
+            kill $(lsof -ti:9090) 2>/dev/null || true
+            sleep 6
+
+            # Verify it came back
+            for i in 1 2 3 4 5; do
+              curl -sf http://localhost:9090/health && break || sleep 3
+            done
 
             echo "✅ Backend PROD deployed to api.redber.in"
 
