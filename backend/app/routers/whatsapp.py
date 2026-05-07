@@ -20,7 +20,7 @@ from fastapi import APIRouter, Request, Response, HTTPException
 from fastapi.responses import PlainTextResponse
 
 from ..integrations.supabase_client import get_supabase_client
-from ..integrations.openai_client import generate_chat_response, client as openai_client
+from ..integrations.openai_client import generate_chat_response, transcribe_audio
 
 router = APIRouter(prefix="/api/whatsapp", tags=["whatsapp"])
 logger = logging.getLogger(__name__)
@@ -229,31 +229,43 @@ async def _handle_message(
     # Mark as read
     await _mark_read(phone_number_id, message_id, effective_token)
 
-    # Upsert lead for this WhatsApp session (every conversation, not just bookings)
+    # Upsert lead for this WhatsApp session
     if supabase:
         try:
             is_booking = "✅ Booking confirmed" in reply
-            # Check if lead already exists for this session
             existing = supabase.table("leads").select("id,type").eq("session_id", session_id).limit(1).execute()
             if existing.data:
-                # Only upgrade type/score if this is a booking confirmation
                 if is_booking:
                     supabase.table("leads").update({
                         "score": 90,
                         "type": "booking",
                         "summary": f"WhatsApp booking confirmed from {from_number}",
+                        "status": "new",
                     }).eq("session_id", session_id).execute()
             else:
-                # New session — create inquiry lead
                 supabase.table("leads").insert({
                     "bot_id": bot_id,
                     "session_id": session_id,
                     "summary": f"WhatsApp enquiry from {from_number}",
-                    "score": 50 if not is_booking else 90,
+                    "score": 90 if is_booking else 50,
                     "type": "booking" if is_booking else "inquiry",
+                    "status": "new",
                 }).execute()
         except Exception as e:
             logger.warning("[WA] lead upsert error: %s", e)
+
+    # Save to bookings table when confirmed (for calendar)
+    if supabase and "✅ Booking confirmed" in reply:
+        try:
+            supabase.table("bookings").insert({
+                "bot_id": bot_id,
+                "customer_phone": from_number,
+                "customer_name": from_number,
+                "status": "confirmed",
+                "notes": f"Booked via WhatsApp",
+            }).execute()
+        except Exception as e:
+            logger.warning("[WA] bookings insert error: %s", e)
 
     # Persist log
     _save_log(bot_id, session_id, message_text, reply, supabase)
@@ -293,18 +305,15 @@ async def _download_media(media_id: str, token: str) -> tuple[bytes, str]:
 
 
 async def _transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
-    """Transcribe audio bytes using OpenAI Whisper."""
-    if not openai_client:
-        logger.warning("[WA] OpenAI client not initialised — cannot transcribe")
-        return ""
+    """Transcribe audio bytes using OpenAI Whisper via shared helper."""
     ext = _AUDIO_EXT_MAP.get(mime_type.strip().lower(), "ogg")
-    # Pass as (filename, bytes, content_type) tuple — required by OpenAI SDK multipart upload
     file_tuple = (f"audio.{ext}", audio_bytes, mime_type.split(";")[0].strip())
-    result = await openai_client.audio.transcriptions.create(
-        model="whisper-1",
-        file=file_tuple,
-    )
-    return (result.text or "").strip()
+    try:
+        text = await transcribe_audio(file_tuple)
+        return (text or "").strip()
+    except Exception as e:
+        logger.error("[WA] Whisper transcription error: %s", e)
+        return ""
 
 
 async def _handle_audio_message(
