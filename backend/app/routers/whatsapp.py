@@ -197,6 +197,10 @@ async def _handle_message(
 ) -> None:
     supabase = get_supabase_client()
     bot_id, persona, config = _fetch_bot_for_phone(phone_number_id, supabase)
+
+    # Use per-bot access token if configured, else fall back to global env token
+    effective_token = (config.get("whatsapp_access_token") or "").strip() or token
+
     kb_context = _fetch_kb_context(bot_id, supabase)
     system_prompt = _build_whatsapp_prompt(persona, config, kb_context)
     session_id = f"wa_{from_number}"
@@ -219,10 +223,10 @@ async def _handle_message(
         reply = "Sorry, I'm having a little trouble right now. Please try again in a moment!"
 
     # Send reply
-    await _send_whatsapp_message(phone_number_id, from_number, reply, token)
+    await _send_whatsapp_message(phone_number_id, from_number, reply, effective_token)
 
     # Mark as read
-    await _mark_read(phone_number_id, message_id, token)
+    await _mark_read(phone_number_id, message_id, effective_token)
 
     # Persist log
     _save_log(bot_id, session_id, message_text, reply, supabase)

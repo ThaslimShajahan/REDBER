@@ -292,6 +292,47 @@ export default function PersonaConfigEditor({ config, onChange }: { config: any;
                 </div>
             </div>
 
+            {/* WhatsApp Channel */}
+            <div className={SECTION_CLS}>
+                <h4 className="text-sm font-bold text-white border-b border-white/5 pb-2">💬 WhatsApp Channel</h4>
+                <div className="space-y-4">
+                    <div className="flex items-center gap-3 bg-black/30 p-3 rounded-xl border border-white/5">
+                        <input type="checkbox" checked={p.whatsapp_enabled ?? false} onChange={e => set("whatsapp_enabled", e.target.checked)} className="w-4 h-4 accent-green-500" id="wa-enabled-toggle" />
+                        <label htmlFor="wa-enabled-toggle" className="cursor-pointer">
+                            <p className="text-sm font-semibold">Enable WhatsApp Integration</p>
+                            <p className="text-[10px] text-gray-400">Link a WhatsApp Business number to this bot</p>
+                        </label>
+                    </div>
+                    {p.whatsapp_enabled && (
+                        <div className="space-y-3 pl-1">
+                            <div>
+                                <label className={LABEL_CLS}>Phone Number ID</label>
+                                <input className={INPUT_CLS} placeholder="e.g. 1110104482185298"
+                                    value={p.whatsapp_phone_number_id || ""} onChange={e => set("whatsapp_phone_number_id", e.target.value)} />
+                                <p className="text-[10px] text-gray-500 mt-1">
+                                    Found in Meta Developer Console → WhatsApp → API Setup → Phone Number ID
+                                </p>
+                            </div>
+                            <div>
+                                <label className={LABEL_CLS}>Access Token (optional — leave blank to use global token)</label>
+                                <input className={INPUT_CLS} placeholder="EAAd…"
+                                    value={p.whatsapp_access_token || ""} onChange={e => set("whatsapp_access_token", e.target.value)} />
+                                <p className="text-[10px] text-gray-500 mt-1">
+                                    Each bot/client can have their own Meta app token. Leave blank to use the shared account token.
+                                </p>
+                            </div>
+                            <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-3 text-xs text-green-300 space-y-1">
+                                <p className="font-bold">Webhook URL for this bot:</p>
+                                <code className="block bg-black/40 rounded-lg px-2 py-1 font-mono text-[10px] text-green-200 break-all">
+                                    https://api.redber.in/api/whatsapp/webhook
+                                </code>
+                                <p className="text-[10px] text-green-400/70 mt-1">Set this in Meta → WhatsApp → Configuration → Webhook. Subscribe to the <strong>messages</strong> field.</p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
             {/* Restrictions */}
             <div className={SECTION_CLS}>
                 <h4 className="text-sm font-bold text-rose-400 border-b border-rose-500/10 pb-2">Guardrails & Restrictions</h4>
