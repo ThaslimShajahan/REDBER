@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Users, Database, LayoutDashboard, Search, ArrowLeft, ScrollText, Mail, TrendingUp, MessageSquare, PenLine, LogOut, Shield, ChevronDown, Crown } from "lucide-react";
+import { Users, Database, LayoutDashboard, Search, ArrowLeft, ScrollText, Mail, TrendingUp, MessageSquare, PenLine, LogOut, Shield, ChevronDown, Crown, CalendarDays, Radio } from "lucide-react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { API_BASE, authFetch } from "../../lib/api";
@@ -15,6 +15,8 @@ import ConversionMetrics from "./components/ConversionMetrics";
 import WhatsAppConfig from "./components/WhatsAppConfig";
 import TrainingStudio from "./components/TrainingStudio";
 import SuperAdminPanel from "./components/SuperAdminPanel";
+import CalendarView from "./components/CalendarView";
+import LiveChatView from "./components/LiveChatView";
 
 import { AuthProvider, useAuth, hasFeature } from "./context/AuthContext";
 
@@ -226,9 +228,11 @@ function Dashboard() {
         { id: "kb", label: "Knowledge Base", icon: Database, feature: "kb" },
         { id: "training", label: "AI Training Studio", icon: PenLine, feature: "training" },
         { id: "leads", label: "Lead Center", icon: Users, feature: "leads" },
+        { id: "calendar", label: "Bookings Calendar", icon: CalendarDays, feature: "leads" },
+        { id: "live_chat", label: "Live Chat", icon: Radio, feature: "contacts", badge: unreadCount },
         { id: "metrics", label: "Conversion Metrics", icon: TrendingUp, feature: "metrics" },
         { id: "integrations", label: "Integrations", icon: MessageSquare, feature: "integrations" },
-        { id: "contacts", label: "Contact Messages", icon: Mail, feature: "contacts", badge: unreadCount },
+        { id: "contacts", label: "Contact Messages", icon: Mail, feature: "contacts" },
         { id: "logs", label: "Chat Logs", icon: ScrollText, feature: "logs" },
         ...(isSuperAdmin ? [{ id: "super", label: "Super Admin", icon: Crown, always: true }] : []),
     ].filter(item => item.always || isSuperAdmin || hasFeature(features, item.feature as string));
@@ -237,6 +241,7 @@ function Dashboard() {
         leads: "Lead Center", kb: "Knowledge Base", settings: "Bot Manager",
         contacts: "Contact Messages", logs: "Chat Logs", metrics: "Conversion Metrics",
         integrations: "Integrations & Channels", training: "AI Training Studio",
+        calendar: "Bookings Calendar", live_chat: "Live Chat",
         super: "Super Admin",
     };
 
@@ -344,6 +349,8 @@ function Dashboard() {
                     {activeTab === "metrics" && <ConversionMetrics />}
                     {activeTab === "integrations" && <WhatsAppConfig />}
                     {activeTab === "training" && <TrainingStudio />}
+                    {activeTab === "calendar" && <CalendarView />}
+                    {activeTab === "live_chat" && <LiveChatView />}
                     {activeTab === "super" && <SuperAdminPanel />}
                 </motion.div>
             </main>

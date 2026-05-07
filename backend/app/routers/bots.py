@@ -9,13 +9,32 @@ from ..integrations.openai_client import transcribe_audio, generate_speech
 from ..integrations.supabase_client import get_supabase_client
 from pydantic import BaseModel
 from typing import Optional
+import time
+from collections import defaultdict
 
 import os
 load_dotenv = lambda: __import__('dotenv').load_dotenv(override=True)
 load_dotenv()
 
-# Get key from environment
-DEEPGRAM_API_KEY = os.environ.get("DEEPGRAM_API_KEY", "").strip()
+# Get keys from environment
+DEEPGRAM_API_KEY    = os.environ.get("DEEPGRAM_API_KEY", "").strip()
+ELEVENLABS_API_KEY  = os.environ.get("ELEVENLABS_API_KEY", "").strip()
+
+# ── Active session tracking (in-memory, 5-min TTL) ───────────────────────────
+_active_sessions: dict = defaultdict(dict)  # bot_id → {session_id: last_seen}
+_SESSION_TTL = 300  # seconds
+
+def _touch_session(bot_id: str, session_id: str) -> None:
+    now = time.time()
+    _active_sessions[bot_id][session_id] = now
+    # GC sessions older than TTL
+    _active_sessions[bot_id] = {
+        sid: ts for sid, ts in _active_sessions[bot_id].items() if now - ts < _SESSION_TTL
+    }
+
+def _get_visitor_count(bot_id: str) -> int:
+    now = time.time()
+    return sum(1 for ts in _active_sessions.get(bot_id, {}).values() if now - ts < _SESSION_TTL)
 
 router = APIRouter(
     prefix="/api/bots",
@@ -63,31 +82,64 @@ def _check_domain_allowlist(bot_id: str, request_origin: str) -> None:
 
 class TTSRequest(BaseModel):
     text: str
-    voice: str = "aura-asteria-en"  # Deepgram Aura voice
+    voice: str = "aura-asteria-en"  # Deepgram voice (default)
+    provider: str = "deepgram"       # "deepgram" | "elevenlabs" | "openai"
+    voice_id: str = ""               # ElevenLabs voice ID
 
 
 @router.post("/tts")
 async def text_to_speech(req: TTSRequest):
-    """Convert text to speech using Deepgram Aura TTS (ultra-low latency)."""
-    try:
-        url = f"https://api.deepgram.com/v1/speak?model={req.voice}"
-        headers = {
-            "Authorization": f"Token {DEEPGRAM_API_KEY}",
-            "Content-Type": "application/json",
-        }
-        async with httpx.AsyncClient(timeout=15.0) as http_client:
-            response = await http_client.post(url, headers=headers, json={"text": req.text})
-            if response.status_code == 200:
-                audio_b64 = base64.b64encode(response.content).decode("utf-8")
-                return {"audio_b64": audio_b64, "provider": "deepgram"}
-    except Exception as e:
-        print(f"[TTS] Deepgram failed: {e}, falling back to OpenAI")
+    """Convert text to speech. Supports ElevenLabs, Deepgram Aura, and OpenAI."""
 
-    # Fallback to OpenAI TTS
+    # ── ElevenLabs ──────────────────────────────────────────────────────────
+    if req.provider == "elevenlabs" and req.voice_id and ELEVENLABS_API_KEY:
+        try:
+            url = f"https://api.elevenlabs.io/v1/text-to-speech/{req.voice_id}"
+            headers = {
+                "xi-api-key": ELEVENLABS_API_KEY,
+                "Content-Type": "application/json",
+                "Accept": "audio/mpeg",
+            }
+            body = {
+                "text": req.text,
+                "model_id": "eleven_turbo_v2_5",
+                "voice_settings": {
+                    "stability": 0.5,
+                    "similarity_boost": 0.8,
+                    "style": 0.0,
+                    "use_speaker_boost": True,
+                },
+            }
+            async with httpx.AsyncClient(timeout=20.0) as http_client:
+                response = await http_client.post(url, headers=headers, json=body)
+                if response.status_code == 200:
+                    audio_b64 = base64.b64encode(response.content).decode("utf-8")
+                    return {"audio_b64": audio_b64, "provider": "elevenlabs", "format": "mp3"}
+                print(f"[TTS] ElevenLabs returned {response.status_code}: {response.text[:200]}")
+        except Exception as e:
+            print(f"[TTS] ElevenLabs failed: {e}")
+
+    # ── Deepgram ─────────────────────────────────────────────────────────────
+    if req.provider != "openai" and DEEPGRAM_API_KEY:
+        try:
+            url = f"https://api.deepgram.com/v1/speak?model={req.voice}"
+            headers = {
+                "Authorization": f"Token {DEEPGRAM_API_KEY}",
+                "Content-Type": "application/json",
+            }
+            async with httpx.AsyncClient(timeout=15.0) as http_client:
+                response = await http_client.post(url, headers=headers, json={"text": req.text})
+                if response.status_code == 200:
+                    audio_b64 = base64.b64encode(response.content).decode("utf-8")
+                    return {"audio_b64": audio_b64, "provider": "deepgram", "format": "linear16"}
+        except Exception as e:
+            print(f"[TTS] Deepgram failed: {e}")
+
+    # ── OpenAI fallback ───────────────────────────────────────────────────────
     try:
         audio_bytes = await generate_speech(req.text, "nova")
         audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
-        return {"audio_b64": audio_b64, "provider": "openai"}
+        return {"audio_b64": audio_b64, "provider": "openai", "format": "mp3"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"TTS failed: {e}")
 
@@ -125,10 +177,18 @@ class SetRateLimitsRequest(BaseModel):
     max_bots: int = 20
 
 
+@router.get("/{bot_id}/visitors")
+async def get_visitor_count(bot_id: str):
+    """Returns the number of active chat sessions for a bot (last 5 minutes)."""
+    return {"count": _get_visitor_count(bot_id)}
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest, http_request: Request):
     from ..services.bot_service import BotService
     from ..services.rate_limiter import check_and_increment, get_bot_limits, get_friendly_block_message
+
+    _touch_session(request.bot_id, request.session_id)
 
     # Domain allowlist check
     origin = http_request.headers.get("origin") or http_request.headers.get("referer") or ""
@@ -173,6 +233,8 @@ async def chat_stream(request: ChatRequest, http_request: Request):
     """
     from ..services.bot_service import BotService
     from ..services.rate_limiter import check_and_increment, get_bot_limits, get_friendly_block_message
+
+    _touch_session(request.bot_id, request.session_id)
 
     # Domain allowlist check
     origin = http_request.headers.get("origin") or http_request.headers.get("referer") or ""

@@ -63,6 +63,10 @@ export default function EmbedChatPage() {
                 fullScreen={true}
                 suggestedQuestions={bot.page_config?.suggested_questions || []}
                 voiceEnabled={!!bot.persona_config?.voice_enabled}
+                autoTts={!!bot.page_config?.auto_tts}
+                ttsProvider={bot.page_config?.tts_provider || "openai"}
+                elevenVoiceId={bot.page_config?.eleven_voice_id || ""}
+                deepgramVoice={bot.page_config?.deepgram_voice || "aura-asteria-en"}
             />
         </div>
     );

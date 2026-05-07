@@ -4,10 +4,13 @@ import tempfile
 import uuid
 import asyncio
 import logging
+import httpx
 from typing import Optional, List
 from urllib.parse import urlparse
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends, Query
 from pydantic import BaseModel
+
+ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "").strip()
 from ..rag.ingestion import extract_text_from_pdf, chunk_text
 from ..integrations.openai_client import generate_embedding
 from ..integrations.supabase_client import get_supabase_client
@@ -230,6 +233,10 @@ def _extract_sitemap_urls(sitemap_xml: str, base_domain: str) -> list[str]:
     return result
 
 
+# In-memory fallback for crawl job state (used when crawl_jobs table doesn't exist in DB)
+_crawl_jobs_mem: dict = {}
+
+
 async def _crawl_and_ingest(job_id: str, bot_id: str, start_url: str):
     """Background task: two-phase crawl.
     Phase 1: Discover ALL internal URLs (sitemap + BFS recursion, no dup)
@@ -250,16 +257,14 @@ async def _crawl_and_ingest(job_id: str, bot_id: str, start_url: str):
     MAX_PAGES = 100
     
     def _update_job(**kwargs):
+        # Always update in-memory store first (instant, no DB required)
+        _crawl_jobs_mem.setdefault(job_id, {"id": job_id, "bot_id": bot_id, "url": start_url})
+        _crawl_jobs_mem[job_id].update(kwargs)
         try:
             supabase.table("crawl_jobs").update({**kwargs, "updated_at": "now()"}).eq("id", job_id).execute()
-        except Exception as e:
-            # If page_statuses column doesn't exist yet, retry without it
-            if "page_statuses" in kwargs:
-                try:
-                    safe_kwargs = {k: v for k, v in kwargs.items() if k != "page_statuses"}
-                    supabase.table("crawl_jobs").update({**safe_kwargs, "updated_at": "now()"}).eq("id", job_id).execute()
-                except Exception:
-                    pass
+        except Exception:
+            # DB table may not exist — memory store is the fallback
+            pass
     
     _update_job(status="discovering")
     
@@ -450,19 +455,19 @@ async def crawl_website(request: CrawlRequest, background_tasks: BackgroundTasks
     if not supabase:
         raise HTTPException(status_code=500, detail="Database credentials missing.")
     
-    # Create a crawl job record
     job_id = str(uuid.uuid4())
+    # Seed in-memory store immediately so polling works even without DB table
+    _crawl_jobs_mem[job_id] = {
+        "id": job_id, "bot_id": request.bot_id, "url": request.url,
+        "status": "pending", "pages_done": 0, "pages_found": 0, "chunks_inserted": 0,
+    }
     try:
         supabase.table("crawl_jobs").insert({
-            "id": job_id,
-            "bot_id": request.bot_id,
-            "url": request.url,
-            "status": "pending",
+            "id": job_id, "bot_id": request.bot_id, "url": request.url, "status": "pending",
         }).execute()
     except Exception as e:
-        # Table might not exist yet, proceed without job tracking
-        logger.warning("crawl_jobs table not found (create it): %s", e)
-    
+        logger.warning("crawl_jobs table missing — using in-memory tracking: %s", e)
+
     background_tasks.add_task(_crawl_and_ingest, job_id, request.bot_id, request.url)
     
     return {"status": "started", "job_id": job_id, "message": f"Crawling {request.url} in background..."}
@@ -470,10 +475,13 @@ async def crawl_website(request: CrawlRequest, background_tasks: BackgroundTasks
 
 @router.get("/kb/crawl_status/{job_id}")
 async def get_crawl_status(job_id: str):
-    """Get the status of a crawl job."""
+    """Get the status of a crawl job. Reads in-memory store first (always up-to-date)."""
+    # In-memory is always fresher (updated every page) — use it if available
+    if job_id in _crawl_jobs_mem:
+        return _crawl_jobs_mem[job_id]
     supabase = get_supabase_client()
     if not supabase:
-        raise HTTPException(status_code=500, detail="Database credentials missing.")
+        return {"status": "unknown"}
     try:
         resp = supabase.table("crawl_jobs").select("*").eq("id", job_id).execute()
         if resp.data:
@@ -485,11 +493,14 @@ async def get_crawl_status(job_id: str):
 @router.get("/kb/active_crawl/{bot_id}")
 async def get_active_crawl(bot_id: str):
     """Get any active (non-done) crawl job for a bot."""
+    # Check in-memory first
+    for job in reversed(list(_crawl_jobs_mem.values())):
+        if job.get("bot_id") == bot_id and job.get("status") not in ("done", "failed"):
+            return job
     supabase = get_supabase_client()
     if not supabase:
-        raise HTTPException(status_code=500, detail="Database credentials missing.")
+        return {"status": "none"}
     try:
-        # Fetch the most recent non-done job (discovering, pending, or running)
         resp = supabase.table("crawl_jobs").select("*") \
             .eq("bot_id", bot_id) \
             .in_("status", ["discovering", "pending", "running"]) \
@@ -1017,6 +1028,104 @@ async def delete_contact(contact_id: str):
     try:
         supabase.table("contacts").delete().eq("id", contact_id).execute()
         return {"status": "deleted"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ====================
+# BOOKINGS
+# ====================
+
+@router.get("/bookings")
+async def list_bookings(
+    limit: int = Query(default=200, le=500),
+    bot_id: Optional[str] = Query(default=None),
+    status: Optional[str] = Query(default=None),
+    allowed_bots: Optional[List[str]] = Depends(get_user_bots),
+):
+    supabase = get_supabase_client()
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database unavailable.")
+    try:
+        q = supabase.table("bookings").select("*").order("created_at", desc=True).limit(limit)
+        if allowed_bots is not None:
+            q = q.in_("bot_id", allowed_bots)
+        if bot_id:
+            q = q.eq("bot_id", bot_id)
+        if status:
+            q = q.eq("status", status)
+        res = q.execute()
+        return res.data or []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/bookings/{booking_id}")
+async def update_booking(booking_id: str, payload: dict):
+    supabase = get_supabase_client()
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database unavailable.")
+    allowed_fields = {"status", "notes", "booking_date", "booking_time", "check_out", "guests", "room_type"}
+    update = {k: v for k, v in payload.items() if k in allowed_fields}
+    if not update:
+        raise HTTPException(status_code=400, detail="No valid fields to update.")
+    try:
+        supabase.table("bookings").update(update).eq("id", booking_id).execute()
+        return {"status": "updated"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/bookings/{booking_id}")
+async def delete_booking(booking_id: str):
+    supabase = get_supabase_client()
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database unavailable.")
+    try:
+        supabase.table("bookings").delete().eq("id", booking_id).execute()
+        return {"status": "deleted"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ====================
+# ELEVENLABS VOICES
+# ====================
+
+@router.get("/elevenlabs/voices")
+async def list_elevenlabs_voices():
+    """Proxy to ElevenLabs voices API — keeps the API key server-side."""
+    # Read key fresh each call so .env changes are picked up without restart
+    key = os.environ.get("ELEVENLABS_API_KEY", "").strip()
+    if not key:
+        raise HTTPException(status_code=503, detail="ELEVENLABS_API_KEY not configured on server.")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            res = await client.get(
+                "https://api.elevenlabs.io/v1/voices",
+                headers={"xi-api-key": key},
+            )
+            if res.status_code == 401:
+                # Never pass 401 back — it would be misread as our own auth failure
+                raise HTTPException(status_code=502, detail=f"ElevenLabs rejected the API key (401). Check ELEVENLABS_API_KEY in your .env and restart the server.")
+            if res.status_code != 200:
+                raise HTTPException(status_code=502, detail=f"ElevenLabs returned {res.status_code}: {res.text[:200]}")
+            data = res.json()
+            voices = [
+                {
+                    "voice_id": v["voice_id"],
+                    "name": v["name"],
+                    "category": v.get("category", ""),
+                    "labels": v.get("labels", {}),
+                    "preview_url": v.get("preview_url", ""),
+                }
+                for v in data.get("voices", [])
+            ]
+            # Sort: own (cloned/generated) voices first, then premade library
+            voices.sort(key=lambda v: (0 if v["category"] == "cloned" else 1 if v["category"] == "generated" else 2, v["name"]))
+            return voices
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

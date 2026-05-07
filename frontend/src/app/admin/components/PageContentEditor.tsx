@@ -201,6 +201,56 @@ export default function PageContentEditor({ config, onChange, bot }: { config: a
                 </div>
             </div>
 
+            {/* ===================== VOICE & TTS ===================== */}
+            <div className="bg-gradient-to-br from-violet-950/40 to-indigo-950/30 border border-violet-500/20 rounded-2xl p-5 space-y-4">
+                <div>
+                    <p className="text-sm font-bold text-white flex items-center gap-2">🎙️ Voice & TTS</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">Bot reads its replies aloud. Powered by ElevenLabs, Deepgram, or OpenAI.</p>
+                </div>
+                <div className="flex items-center gap-3 bg-black/30 p-3 rounded-xl border border-white/5">
+                    <input type="checkbox" checked={pc.auto_tts ?? false} onChange={e => set("auto_tts", e.target.checked)} className="w-4 h-4 accent-violet-500" id="auto-tts-toggle" />
+                    <label htmlFor="auto-tts-toggle" className="cursor-pointer">
+                        <p className="text-sm font-semibold text-white">Auto-read bot replies</p>
+                        <p className="text-[10px] text-gray-400">Bot speaks each response after it finishes typing</p>
+                    </label>
+                </div>
+                {pc.auto_tts && (
+                    <div className="space-y-3">
+                        <div>
+                            <label className={LABEL_CLS}>TTS Provider</label>
+                            <select className={INPUT_CLS + " appearance-none"} value={pc.tts_provider || "openai"} onChange={e => set("tts_provider", e.target.value)}>
+                                <option value="openai">OpenAI (built-in, no key needed)</option>
+                                <option value="elevenlabs">ElevenLabs (premium voices)</option>
+                                <option value="deepgram">Deepgram Aura (ultra-fast)</option>
+                            </select>
+                        </div>
+                        {pc.tts_provider === "elevenlabs" && (
+                            <div>
+                                <label className={LABEL_CLS}>ElevenLabs Voice ID</label>
+                                <input className={INPUT_CLS} placeholder="e.g. 21m00Tcm4TlvDq8ikWAM"
+                                    value={pc.eleven_voice_id || ""} onChange={e => set("eleven_voice_id", e.target.value)} />
+                                <p className="text-[10px] text-gray-500 mt-1">
+                                    Go to <strong className="text-violet-400">elevenlabs.io → Voices</strong> → click any voice → copy the Voice ID from the URL or details panel.
+                                </p>
+                            </div>
+                        )}
+                        {pc.tts_provider === "deepgram" && (
+                            <div>
+                                <label className={LABEL_CLS}>Deepgram Voice Model</label>
+                                <select className={INPUT_CLS + " appearance-none"} value={pc.deepgram_voice || "aura-asteria-en"} onChange={e => set("deepgram_voice", e.target.value)}>
+                                    <option value="aura-asteria-en">Asteria (warm female)</option>
+                                    <option value="aura-luna-en">Luna (soft female)</option>
+                                    <option value="aura-stella-en">Stella (confident female)</option>
+                                    <option value="aura-orion-en">Orion (deep male)</option>
+                                    <option value="aura-arcas-en">Arcas (clear male)</option>
+                                    <option value="aura-perseus-en">Perseus (casual male)</option>
+                                </select>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+
             <div className={SECTION_CLS}>
                 <p className="text-xs font-bold text-gray-300 uppercase tracking-widest">📐 Page Sections</p>
                 {sections.map((sec, si) => (

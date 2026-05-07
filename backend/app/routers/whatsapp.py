@@ -115,7 +115,8 @@ def _fetch_kb_context(bot_id: str, supabase) -> str:
 
 
 def _build_whatsapp_prompt(persona: str, config: dict, kb_context: str) -> str:
-    now = datetime.datetime.now()
+    import datetime as _dt
+    now = _dt.datetime.utcnow()  # UTC — avoids wrong-timezone server clocks
     industry = (config.get("industry") or "").lower()
 
     if "restaurant" in industry or "food" in industry:
@@ -128,9 +129,10 @@ def _build_whatsapp_prompt(persona: str, config: dict, kb_context: str) -> str:
         booking_rule = "Collect Name, Phone, and preferred time — one at a time."
 
     prompt = (
-        f"[SYSTEM — CURRENT DATE & TIME]\n"
-        f"TODAY IS {now.strftime('%A, %B %d, %Y')}. TIME: {now.strftime('%I:%M %p')}.\n"
-        f"Always use this date. Never say a different date.\n\n"
+        f"[SYSTEM — CURRENT DATE & TIME — AUTHORITATIVE]\n"
+        f"TODAY IS {now.strftime('%A, %B %d, %Y')} (UTC). TIME: {now.strftime('%I:%M %p')} UTC.\n"
+        f"THIS IS THE REAL DATE. Do NOT use any other date. Do NOT say it is any earlier month or year.\n"
+        f"If the customer says 'tomorrow', calculate from THIS date above.\n\n"
         f"{persona}\n\n"
         "━━━ WHATSAPP CHANNEL RULES ━━━\n"
         "You are responding via WhatsApp. Keep replies concise and conversational.\n"

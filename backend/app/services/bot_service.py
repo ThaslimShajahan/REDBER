@@ -9,6 +9,7 @@ import re as _re
 from app.models.schemas import ChatRequest, ChatResponse
 from app.integrations.openai_client import generate_chat_response, generate_chat_response_stream, generate_embedding
 from app.integrations.supabase_client import get_supabase_client
+from app.services.email_service import notify_new_lead, notify_new_booking, confirm_booking_to_customer
 
 logger = logging.getLogger(__name__)
 
@@ -325,7 +326,7 @@ Answer ONLY using the data below. If not found, say: "I don't have that specific
         else:
             messages.append({"role": "user", "content": request.message})
 
-        return messages, has_image
+        return messages, has_image, context_images
 
     @staticmethod
     def _parse_tags(bot_reply: str) -> typing.Tuple[str, str, str, typing.Optional[str]]:
@@ -395,13 +396,21 @@ Conversation:
 {full_convo}
 
 Your task:
-1. Score 0-100: how likely is the customer to convert?
+1. LEAD SCORE (0-100) — use these weights:
+   - Customer shared phone number → +35 pts
+   - Customer shared email → +20 pts
+   - Customer explicitly asked to book/reserve/buy → +25 pts
+   - Customer asked for pricing/availability → +15 pts
+   - Customer expressed strong interest (e.g. "I want", "I'd like", "when can I") → +10 pts
+   - Complaint / purely informational / random question → max 15 pts
+   - Booking already confirmed ([SYSTEM_BOOKING_CONFIRMED] in reply) → 100 pts
 2. Type: one of: "booking", "reservation", "product_inquiry", "complaint", "general_question", "lead_opportunity", "none"
 3. Extract: Name, Phone, Email, Date, Time, Check-out, Room Type, Guests (null if not found)
 4. Write a 1-3 line summary of what the customer wants.
+5. intent_signals: list the specific signals that drove the score (e.g. ["shared phone", "asked to book"])
 
 JSON only, no markdown:
-{{"score": 85, "type": "booking", "name": "...", "phone": "...", "email": "...", "summary": "...", "date": null, "time": null, "check_out": null, "room_type": null, "guests": null}}"""
+{{"score": 85, "type": "booking", "name": "...", "phone": "...", "email": "...", "summary": "...", "date": null, "time": null, "check_out": null, "room_type": null, "guests": null, "intent_signals": []}}"""
 
             lead_json_str = await generate_chat_response([
                 {"role": "system", "content": "You are a lead extraction AI. Output ONLY valid JSON, no explanation, no markdown."},
@@ -421,25 +430,49 @@ JSON only, no markdown:
             def _save():
                 if not supabase:
                     return
+
+                # Fetch bot name and notification email in one call
+                bot_meta = supabase.table("bots").select("name, persona_config").eq("id", request.bot_id).maybe_single().execute()
+                bot_name = "Your Bot"
+                admin_email = ""
+                cfg: dict = {}
+                if bot_meta and bot_meta.data:
+                    bot_name = bot_meta.data.get("name") or "Your Bot"
+                    cfg = bot_meta.data.get("persona_config") or {}
+                    admin_email = cfg.get("admin_email") or cfg.get("notification_email") or ""
+
                 if lead_data.get("score", 0) >= 30:
-                    existing = supabase.table("leads").select("id").eq("session_id", request.session_id).execute()
+                    existing = supabase.table("leads").select("id, score").eq("session_id", request.session_id).execute()
                     extracted = []
                     for k, label in [("name", "Name"), ("phone", "Phone"), ("email", "Email"),
                                      ("date", "Check-In/Date"), ("check_out", "Check-Out"),
                                      ("time", "Time"), ("room_type", "Room"), ("guests", "Guests")]:
                         if lead_data.get(k):
                             extracted.append(f"{label}: {lead_data[k]}")
-                    summary = ("\n".join(extracted) + "\n\n" if extracted else "") + "SUMMARY: " + lead_data.get("summary", "")
+                    intent_line = ""
+                    if lead_data.get("intent_signals"):
+                        intent_line = "Signals: " + ", ".join(lead_data["intent_signals"]) + "\n\n"
+                    summary = (
+                        "\n".join(extracted) + "\n\n" if extracted else ""
+                    ) + intent_line + "SUMMARY: " + lead_data.get("summary", "")
                     payload = {
                         "bot_id": request.bot_id, "session_id": request.session_id,
                         "score": lead_data["score"], "type": lead_data["type"],
                         "name": lead_data.get("name"), "phone": lead_data.get("phone"),
                         "email": lead_data.get("email"), "status": "new", "summary": summary.strip()
                     }
+                    is_new_lead = not existing.data
+                    prev_score = existing.data[0].get("score", 0) if existing.data else 0
                     if existing.data:
                         supabase.table("leads").update(payload).eq("session_id", request.session_id).execute()
                     else:
                         supabase.table("leads").insert(payload).execute()
+
+                    # Email admin on new lead or score jump of 20+
+                    if admin_email and (is_new_lead or lead_data["score"] - prev_score >= 20):
+                        asyncio.get_event_loop().run_until_complete(
+                            notify_new_lead(admin_email, {**lead_data, "summary": summary}, bot_name)
+                        )
 
                     if lead_data.get("phone"):
                         supabase.table("customers").upsert({
@@ -447,12 +480,32 @@ JSON only, no markdown:
                             "email": lead_data.get("email"), "preferences": lead_data.get("summary")
                         }, on_conflict="phone").execute()
 
-                    if action_taken == "booking_created" and lead_data.get("phone"):
-                        supabase.table("bookings").insert({
-                            "bot_id": request.bot_id, "customer_phone": lead_data["phone"],
-                            "booking_date": lead_data.get("date"), "booking_time": lead_data.get("time"),
-                            "status": "confirmed"
-                        }).execute()
+                    if action_taken == "booking_created" and lead_data.get("phone") and cfg.get("allow_bookings", True):
+                        booking_row = {
+                            "bot_id": request.bot_id,
+                            "customer_name": lead_data.get("name"),
+                            "customer_phone": lead_data["phone"],
+                            "customer_email": lead_data.get("email"),
+                            "booking_date": lead_data.get("date"),
+                            "booking_time": lead_data.get("time"),
+                            "check_out": lead_data.get("check_out"),
+                            "guests": lead_data.get("guests"),
+                            "room_type": lead_data.get("room_type"),
+                            "status": "confirmed",
+                        }
+                        supabase.table("bookings").insert(booking_row).execute()
+
+                        # Email admin about new booking
+                        if admin_email:
+                            asyncio.get_event_loop().run_until_complete(
+                                notify_new_booking(admin_email, booking_row, bot_name)
+                            )
+
+                        # Email customer booking confirmation
+                        if lead_data.get("email"):
+                            asyncio.get_event_loop().run_until_complete(
+                                confirm_booking_to_customer(lead_data["email"], booking_row, bot_name)
+                            )
 
                 supabase.table("chat_logs").insert({
                     "bot_id": request.bot_id, "session_id": request.session_id,
@@ -484,7 +537,7 @@ JSON only, no markdown:
 
     @staticmethod
     async def process_chat(request: ChatRequest) -> ChatResponse:
-        messages, has_image = await BotService._prepare_messages(request)
+        messages, has_image, context_images = await BotService._prepare_messages(request)
 
         bot_reply = await generate_chat_response(messages, max_tokens=450 if has_image else 350)
 
@@ -509,9 +562,9 @@ JSON only, no markdown:
         """
         Async generator for SSE streaming.
         Yields {"type": "token", "content": "..."} for each token,
-        then {"type": "done", "reply": ..., "format_type": ..., "action_taken": ...} at the end.
+        then {"type": "done", "reply": ..., "format_type": ..., "action_taken": ..., "kb_images": [...]} at the end.
         """
-        messages, has_image = await BotService._prepare_messages(request)
+        messages, has_image, context_images = await BotService._prepare_messages(request)
 
         full_reply = ""
         async for token in generate_chat_response_stream(messages, max_tokens=450 if has_image else 350):
@@ -527,4 +580,13 @@ JSON only, no markdown:
 
         BotService._start_background_post_process(request, clean_reply, confidence_score, gap_topic, action_taken)
 
-        yield {"type": "done", "reply": clean_reply, "format_type": format_type, "action_taken": action_taken}
+        # Deduplicate and cap images; only send if the reply doesn't already embed them as markdown
+        kb_images = []
+        if context_images and "![" not in clean_reply:
+            seen = set()
+            for alt, url in context_images[:5]:
+                if url not in seen:
+                    seen.add(url)
+                    kb_images.append({"alt": alt, "url": url})
+
+        yield {"type": "done", "reply": clean_reply, "format_type": format_type, "action_taken": action_taken, "kb_images": kb_images}
