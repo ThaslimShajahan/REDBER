@@ -2,7 +2,7 @@ name: 🚀 Deploy to PRODUCTION (redber.in)
 
 on:
   push:
-    branches: [main]
+    branches: [main, deploy/whatsapp-voice-fixes]
   workflow_dispatch:                # allow manual trigger from GitHub UI
 
 # Cancel any in-progress deployment on the same branch
@@ -54,7 +54,14 @@ jobs:
             printf 'SUPABASE_KEY=%s\n'             "${{ secrets.SUPABASE_KEY }}"           >> .env
             printf 'OPENAI_API_KEY=%s\n'           "${{ secrets.OPENAI_API_KEY }}"         >> .env
             printf 'DEEPGRAM_API_KEY=%s\n'         "${{ secrets.DEEPGRAM_API_KEY }}"       >> .env
+            printf 'RESEND_API_KEY=%s\n'           "${{ secrets.RESEND_API_KEY }}"         >> .env
+            printf 'ADMIN_FROM_EMAIL=%s\n'         "${{ secrets.ADMIN_FROM_EMAIL }}"       >> .env
+            printf 'ELEVENLABS_API_KEY=%s\n'       "${{ secrets.ELEVENLABS_API_KEY }}"     >> .env
             printf 'FIREBASE_SERVICE_ACCOUNT=%s\n' "$(echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' | tr -d '\n')" >> .env
+            printf 'WHATSAPP_ACCESS_TOKEN=%s\n'    "${{ secrets.WHATSAPP_ACCESS_TOKEN }}"  >> .env
+            printf 'WHATSAPP_PHONE_NUMBER_ID=%s\n' "${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}" >> .env
+            printf 'WHATSAPP_VERIFY_TOKEN=%s\n'    "${{ secrets.WHATSAPP_VERIFY_TOKEN }}"  >> .env
+            printf 'WHATSAPP_DEFAULT_BOT_ID=%s\n'  "${{ secrets.WHATSAPP_DEFAULT_BOT_ID }}" >> .env
 
             echo "♻️  Restarting backend via PM2..."
             pm2 delete redber-backend-prod 2>/dev/null || true
