@@ -9,6 +9,7 @@ Webhook setup in Meta Developer Console:
   Fields:       messages
 """
 
+import io
 import os
 import json
 import logging
@@ -19,7 +20,7 @@ from fastapi import APIRouter, Request, Response, HTTPException
 from fastapi.responses import PlainTextResponse
 
 from ..integrations.supabase_client import get_supabase_client
-from ..integrations.openai_client import generate_chat_response
+from ..integrations.openai_client import generate_chat_response, client as openai_client
 
 router = APIRouter(prefix="/api/whatsapp", tags=["whatsapp"])
 logger = logging.getLogger(__name__)
@@ -228,9 +229,110 @@ async def _handle_message(
     # Mark as read
     await _mark_read(phone_number_id, message_id, effective_token)
 
+    # Save lead if booking was confirmed
+    if "✅ Booking confirmed" in reply:
+        try:
+            supabase.table("leads").insert({
+                "bot_id": bot_id,
+                "session_id": session_id,
+                "summary": f"WhatsApp booking from {from_number}",
+                "score": 90,
+                "type": "booking",
+                "channel": "whatsapp",
+            }).execute()
+        except Exception as e:
+            logger.warning("[WA] lead insert error: %s", e)
+
     # Persist log
     _save_log(bot_id, session_id, message_text, reply, supabase)
     logger.info("[WA] Handled: bot=%s from=%s", bot_id, from_number)
+
+
+_AUDIO_EXT_MAP = {
+    "audio/ogg": "ogg",
+    "audio/ogg; codecs=opus": "ogg",
+    "audio/mpeg": "mp3",
+    "audio/mp4": "mp4",
+    "audio/wav": "wav",
+    "audio/webm": "webm",
+}
+
+
+async def _download_media(media_id: str, token: str) -> tuple[bytes, str]:
+    """Fetch media bytes from the WhatsApp Cloud API.
+
+    Returns (audio_bytes, mime_type).
+    """
+    meta_url = f"{GRAPH_API_BASE}/{media_id}"
+    headers = {"Authorization": f"Bearer {token}"}
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        # Step 1: resolve the download URL + mime_type
+        resp = await client.get(meta_url, headers=headers)
+        resp.raise_for_status()
+        meta = resp.json()
+        download_url = meta["url"]
+        mime_type = meta.get("mime_type", "audio/ogg")
+
+        # Step 2: download the actual bytes
+        media_resp = await client.get(download_url, headers=headers)
+        media_resp.raise_for_status()
+
+    return media_resp.content, mime_type
+
+
+async def _transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
+    """Transcribe audio bytes using OpenAI Whisper.
+
+    Returns the transcribed text string (may be empty).
+    """
+    # Determine file extension from mime type; default to ogg
+    ext = _AUDIO_EXT_MAP.get(mime_type.strip().lower(), "ogg")
+    buf = io.BytesIO(audio_bytes)
+    buf.name = f"audio.{ext}"
+    result = await openai_client.audio.transcriptions.create(
+        model="whisper-1",
+        file=buf,
+    )
+    return (result.text or "").strip()
+
+
+async def _handle_audio_message(
+    phone_number_id: str,
+    from_number: str,
+    media_id: str,
+    message_id: str,
+    token: str,
+) -> None:
+    """Download, transcribe, and route a WhatsApp voice message."""
+    try:
+        audio_bytes, mime_type = await _download_media(media_id, token)
+        text = await _transcribe_audio(audio_bytes, mime_type)
+
+        if not text:
+            await _send_whatsapp_message(
+                phone_number_id,
+                from_number,
+                "I couldn't make out that voice message. Could you type it out? 🙏",
+                token,
+            )
+            return
+
+        logger.info("[WA] Voice transcript from=%s: %s", from_number, text[:120])
+        await _handle_message(
+            phone_number_id,
+            from_number,
+            f"[Voice]: {text}",
+            message_id,
+            token,
+        )
+    except Exception as e:
+        logger.error("[WA] Audio handling error: %s", e)
+        await _send_whatsapp_message(
+            phone_number_id,
+            from_number,
+            "Sorry, I had trouble with that voice message. Please type instead.",
+            token,
+        )
 
 
 # ─── Webhook Endpoints ────────────────────────────────────────────────────────
@@ -288,15 +390,25 @@ async def receive_webhook(request: Request) -> dict:
                             _handle_message(phone_number_id, from_num, text, msg_id, token)
                         )
                 elif msg_type in ("image", "audio", "video", "document"):
-                    # Acknowledge receipt but can't process media yet
-                    asyncio.create_task(
-                        _send_whatsapp_message(
-                            phone_number_id, from_num,
-                            "Thanks for your message! I can only read text for now — please describe what you need and I'll help you out 😊",
-                            token,
+                    if msg_type == "audio":
+                        media_id = msg.get("audio", {}).get("id", "")
+                        if media_id:
+                            asyncio.create_task(
+                                _handle_audio_message(
+                                    phone_number_id, from_num, media_id, msg_id, token
+                                )
+                            )
+                            await _mark_read(phone_number_id, msg_id, token)
+                    else:
+                        # image, video, document — can't process yet
+                        asyncio.create_task(
+                            _send_whatsapp_message(
+                                phone_number_id, from_num,
+                                "Thanks for your message! I can only read text for now — please describe what you need and I'll help you out 😊",
+                                token,
+                            )
                         )
-                    )
-                    await _mark_read(phone_number_id, msg.get("id", ""), token)
+                        await _mark_read(phone_number_id, msg.get("id", ""), token)
                 else:
                     logger.debug("[WA] Unhandled message type: %s", msg_type)
 

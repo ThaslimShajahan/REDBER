@@ -1,8 +1,8 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { 
-  onAuthStateChanged, 
+import {
+  onAuthStateChanged,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
@@ -14,12 +14,21 @@ import { auth, db, googleProvider } from "../../../lib/firebase";
 // ─── Super Admin UID (hardcoded for bootstrap security) ─────────────────────
 const SUPER_ADMIN_UID = "0QldlPOgyQS2ddhvvOBHyB797hD2";
 
+// ─── Package Tier Definitions ────────────────────────────────────────────────
+export const PACKAGES = {
+  starter:    { name: "Starter",    callMinutesPerMonth: 0,    maxBots: 1,   monthlyMessages: 500 },
+  pro:        { name: "Pro",        callMinutesPerMonth: 60,   maxBots: 3,   monthlyMessages: 5000 },
+  business:   { name: "Business",   callMinutesPerMonth: 300,  maxBots: 10,  monthlyMessages: 50000 },
+  enterprise: { name: "Enterprise", callMinutesPerMonth: 9999, maxBots: 999, monthlyMessages: 999999 },
+} as const;
+
 // Features can be a flat boolean OR a nested sub-feature map
 export type TenantFeatures = Record<string, boolean | Record<string, boolean>>;
 
 export interface TenantLimits {
   monthlyMessages: number;
   maxBots: number;
+  callMinutesPerMonth: number;
   messagesPerDay?: number;
   messagesPerHour?: number;
   apiCallsPerMinute?: number;
@@ -62,7 +71,7 @@ const DEFAULT_FEATURES: TenantFeatures = {
   logs: { view_logs: false, export_logs: false, search_logs: false },
 };
 const DEFAULT_LIMITS: TenantLimits = {
-  monthlyMessages: 500, maxBots: 1,
+  monthlyMessages: 500, maxBots: 1, callMinutesPerMonth: 60,
   messagesPerDay: 50, messagesPerHour: 10, apiCallsPerMinute: 5, burstLimit: 20,
 };
 
@@ -77,7 +86,7 @@ const buildAllEnabled = (): TenantFeatures => ({
   logs: { view_logs: true, export_logs: true, search_logs: true },
 });
 const SUPER_ADMIN_FEATURES: TenantFeatures = buildAllEnabled();
-const SUPER_ADMIN_LIMITS: TenantLimits = { monthlyMessages: 999999, maxBots: 999, messagesPerDay: 99999, messagesPerHour: 9999, apiCallsPerMinute: 999, burstLimit: 9999 };
+const SUPER_ADMIN_LIMITS: TenantLimits = { monthlyMessages: 999999, maxBots: 999, callMinutesPerMonth: 9999, messagesPerDay: 99999, messagesPerHour: 9999, apiCallsPerMinute: 999, burstLimit: 9999 };
 
 interface AuthContextType {
   user: TenantUser | null;

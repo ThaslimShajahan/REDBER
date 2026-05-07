@@ -126,7 +126,17 @@ function ElevenVoicePicker({ value, onChange }: { value: string; onChange: (id: 
     );
 }
 
-export default function PersonaConfigEditor({ config, onChange }: { config: any; onChange: (c: any) => void }) {
+export default function PersonaConfigEditor({
+    config,
+    onChange,
+    callMinutesUsed = 0,
+    callMinutesTotal = 60,
+}: {
+    config: any;
+    onChange: (c: any) => void;
+    callMinutesUsed?: number;
+    callMinutesTotal?: number;
+}) {
     const p = config || {};
     const set = (key: string, val: any) => onChange({ ...p, [key]: val });
 
@@ -135,13 +145,17 @@ export default function PersonaConfigEditor({ config, onChange }: { config: any;
         set(key, arr);
     };
 
+    const pctUsed = callMinutesTotal > 0
+        ? Math.round((callMinutesUsed / callMinutesTotal) * 100)
+        : 100;
+
     return (
         <div className="text-sm">
             <p className="text-xs text-gray-500 bg-white/5 rounded-xl px-3 py-2 border border-white/5 mb-5">
                 These settings drive the AI's core instructions and behavior pattern dynamically.
             </p>
 
-            {/* Basic Info */}
+            {/* 1 — Basic Profile */}
             <div className={SECTION_CLS}>
                 <h4 className="text-sm font-bold text-white border-b border-white/5 pb-2">Basic Profile</h4>
                 <div className="grid grid-cols-2 gap-4">
@@ -161,7 +175,7 @@ export default function PersonaConfigEditor({ config, onChange }: { config: any;
                 </div>
             </div>
 
-            {/* Behavior Controls */}
+            {/* 2 — Behavior & Tone */}
             <div className={SECTION_CLS}>
                 <h4 className="text-sm font-bold text-white border-b border-white/5 pb-2">Behavior & Tone</h4>
                 <div className="grid grid-cols-2 gap-4">
@@ -193,7 +207,7 @@ export default function PersonaConfigEditor({ config, onChange }: { config: any;
                 </div>
             </div>
 
-            {/* Sales & Conversion */}
+            {/* 3 — Sales & Conversion */}
             <div className={SECTION_CLS}>
                 <h4 className="text-sm font-bold text-white border-b border-white/5 pb-2">Sales & Conversion</h4>
                 <div className="grid grid-cols-2 gap-4">
@@ -236,7 +250,7 @@ export default function PersonaConfigEditor({ config, onChange }: { config: any;
                 </div>
             </div>
 
-            {/* Voice Call Settings */}
+            {/* 4 — Voice Call Settings */}
             <div className={SECTION_CLS}>
                 <h4 className="text-sm font-bold text-white border-b border-white/5 pb-2">🎙️ Voice Call</h4>
                 <div className="space-y-4">
@@ -292,7 +306,7 @@ export default function PersonaConfigEditor({ config, onChange }: { config: any;
                 </div>
             </div>
 
-            {/* WhatsApp Channel */}
+            {/* 5 — WhatsApp Channel */}
             <div className={SECTION_CLS}>
                 <h4 className="text-sm font-bold text-white border-b border-white/5 pb-2">💬 WhatsApp Channel</h4>
                 <div className="space-y-4">
@@ -333,7 +347,36 @@ export default function PersonaConfigEditor({ config, onChange }: { config: any;
                 </div>
             </div>
 
-            {/* Restrictions */}
+            {/* 6 — Call Credits */}
+            <div className={SECTION_CLS}>
+                <h4 className="text-sm font-bold text-white border-b border-white/5 pb-2">📞 Voice Call Credits</h4>
+                <div className="space-y-3">
+                    <div className="flex items-center justify-between text-xs">
+                        <span className="text-gray-400">Minutes used this month</span>
+                        <span className={`font-bold ${pctUsed > 80 ? 'text-rose-400' : pctUsed > 50 ? 'text-amber-400' : 'text-green-400'}`}>
+                            {callMinutesUsed} / {callMinutesTotal} min
+                        </span>
+                    </div>
+                    <div className="w-full bg-white/10 rounded-full h-2">
+                        <div
+                            className={`h-2 rounded-full transition-all ${pctUsed > 80 ? 'bg-rose-500' : pctUsed > 50 ? 'bg-amber-500' : 'bg-green-500'}`}
+                            style={{ width: `${Math.min(pctUsed, 100)}%` }}
+                        />
+                    </div>
+                    {pctUsed > 80 && (
+                        <p className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-xl px-3 py-2">
+                            ⚠️ Voice call credits running low. Upgrade your plan or contact support.
+                        </p>
+                    )}
+                    {callMinutesTotal === 0 && (
+                        <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2">
+                            Voice calls are not included in your current plan. Upgrade to enable.
+                        </p>
+                    )}
+                </div>
+            </div>
+
+            {/* 7 — Guardrails */}
             <div className={SECTION_CLS}>
                 <h4 className="text-sm font-bold text-rose-400 border-b border-rose-500/10 pb-2">Guardrails & Restrictions</h4>
                 <div className="space-y-4 pt-2">
@@ -341,16 +384,6 @@ export default function PersonaConfigEditor({ config, onChange }: { config: any;
                         <label className={LABEL_CLS}>Topics AI Must Avoid (comma separated)</label>
                         <input className={INPUT_CLS} placeholder="Politics, competitor pricing, medical advice..."
                             value={(p.restricted_topics || []).join(', ')} onChange={e => handleArray("restricted_topics", e.target.value)} />
-                    </div>
-                    <div>
-                        <label className={LABEL_CLS}>Compliance / Safety Rules (comma separated)</label>
-                        <input className={INPUT_CLS} placeholder="Do not promise discounts, Do not guarantee dates..."
-                            value={(p.compliance_rules || []).join(', ')} onChange={e => handleArray("compliance_rules", e.target.value)} />
-                    </div>
-                    <div>
-                        <label className={LABEL_CLS}>Out of Scope Response</label>
-                        <textarea className={INPUT_CLS + " h-16 resize-none"} placeholder="What the AI says when declining a topic..."
-                            value={p.out_of_scope_response || ""} onChange={e => set("out_of_scope_response", e.target.value)} />
                     </div>
                 </div>
             </div>

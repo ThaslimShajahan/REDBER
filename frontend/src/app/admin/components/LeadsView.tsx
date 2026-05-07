@@ -34,6 +34,7 @@ export default function LeadsView() {
     const [sortKey, setSortKey] = useState<SortKey>("created_at");
     const [sortDir, setSortDir] = useState<SortDir>("desc");
     const [filterStatus, setFilterStatus] = useState<string>("all");
+    const [filterChannel, setFilterChannel] = useState<"all" | "web" | "whatsapp">("all");
 
     const fetchLeads = () => {
         if (!user) return;
@@ -64,6 +65,11 @@ export default function LeadsView() {
 
     const filtered = leads
         .filter(l => filterStatus === "all" ? true : (l.status || "new") === filterStatus)
+        .filter(l => {
+            if (filterChannel === "whatsapp") return (l.session_id || "").startsWith("wa_");
+            if (filterChannel === "web") return !(l.session_id || "").startsWith("wa_");
+            return true;
+        })
         .sort((a, b) => {
             if (sortKey === "created_at") {
                 const ta = new Date(a.created_at || 0).getTime();
@@ -123,6 +129,7 @@ export default function LeadsView() {
             </div>
 
             {/* Controls: filter + sort + refresh */}
+            <div className="space-y-2">
             <div className="flex items-center gap-3 flex-wrap">
                 <span className="text-xs text-gray-500 font-bold uppercase tracking-widest">Filter:</span>
                 {["all", "new", "contacted", "closed"].map(s => (
@@ -166,6 +173,24 @@ export default function LeadsView() {
                     <Download size={13} /> Export Leads &rarr; CSV
                 </button>
             </div>
+            <div className="flex items-center gap-3 flex-wrap">
+                <span className="text-xs text-gray-500 font-bold uppercase tracking-widest">Channel:</span>
+                {(["all", "web", "whatsapp"] as const).map(ch => (
+                    <button
+                        key={ch}
+                        onClick={() => setFilterChannel(ch)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all ${filterChannel === ch
+                            ? ch === "all" ? "bg-white/15 text-white border border-white/20"
+                                : ch === "whatsapp" ? "bg-green-500/20 text-green-300 border border-green-500/30"
+                                    : "bg-white/15 text-white border border-white/20"
+                            : "bg-white/5 text-gray-500 border border-white/5 hover:border-white/20 hover:text-gray-300"
+                        }`}
+                    >
+                        {ch === "whatsapp" ? "WhatsApp 💬" : ch}
+                    </button>
+                ))}
+            </div>
+            </div>
 
             <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden backdrop-blur-sm">
                 <table className="w-full text-left border-collapse">
@@ -200,7 +225,12 @@ export default function LeadsView() {
                                             <div className="flex items-center gap-2">
                                                 <div className="w-7 h-7 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center text-xs font-bold shrink-0">{displayName.charAt(0).toUpperCase()}</div>
                                                 <div>
-                                                    <span className="font-medium text-white text-sm block">{displayName}</span>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="font-medium text-white text-sm">{displayName}</span>
+                                                        {(lead.session_id || "").startsWith("wa_") && (
+                                                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-green-500/20 text-green-300 border border-green-500/30">WhatsApp</span>
+                                                        )}
+                                                    </div>
                                                     {lead.phone && <span className="text-[10px] text-gray-500">{lead.phone}</span>}
                                                 </div>
                                             </div>
