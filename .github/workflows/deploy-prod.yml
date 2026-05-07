@@ -28,6 +28,12 @@ jobs:
           port:     ${{ secrets.VPS_PORT || 22 }}
           script: |
             set -e
+
+            echo "🕐 Syncing server clock..."
+            timedatectl set-ntp true 2>/dev/null || true
+            chronyc makestep 2>/dev/null || ntpdate -u pool.ntp.org 2>/dev/null || true
+            date
+
             APP_DIR="/home/${{ secrets.CP_BACKEND_PROD_USER }}/htdocs/api.redber.in"
             mkdir -p "$APP_DIR"
             cd "$APP_DIR"

@@ -220,10 +220,10 @@ def _build_system_prompt(persona: str, config: dict, kb_context: str) -> str:
     else:
         booking_rule = "BOOKING: If the user wants to book, collect their contact details and preferred time."
 
-    now = datetime.datetime.now()
+    now = datetime.datetime.now(datetime.timezone.utc)
     prompt = (
         f"[CURRENT DATE & TIME — ground truth, never use training knowledge for date/time]\n"
-        f"TODAY: {now.strftime('%A, %B %d, %Y')}  |  NOW: {now.strftime('%I:%M %p')}\n"
+        f"TODAY: {now.strftime('%A, %B %d, %Y')}  |  NOW: {now.strftime('%I:%M %p')} UTC\n"
         f"Any date before {now.strftime('%B %d, %Y')} is in the past — never book a past date.\n\n"
         f"{persona}\n\n"
         "VOICE PERSONALITY — THIS IS A REAL PHONE CALL, NOT A CHAT BOT:\n"
@@ -266,9 +266,9 @@ def _build_eleven_system_prompt(base_prompt: str, config: dict) -> str:
     else:
         booking_rule = "Collect Name, Phone, and preferred time — one question at a time."
 
-    now = datetime.datetime.now()
+    now = datetime.datetime.now(datetime.timezone.utc)
     today_str = now.strftime("%A, %B %d, %Y")
-    time_str  = now.strftime("%I:%M %p")
+    time_str  = now.strftime("%I:%M %p") + " UTC"
 
     call_rules = (
         # Date pinned at the very top so it's the first thing the LLM sees
