@@ -68,7 +68,7 @@ export default function Home() {
     window.addEventListener("scroll", fn); return () => window.removeEventListener("scroll", fn);
   }, []);
   useEffect(() => {
-    fetch("https://ipapi.co/json/").then(r => r.json()).then(d => setRegion(COUNTRY_TO_REGION[d.country_code] ?? "USD")).catch(() => setRegion("USD"));
+    fetch("https://ipapi.co/json/").then(r => r.json()).then(d => { if (d?.country_code) setRegion(COUNTRY_TO_REGION[d.country_code] ?? "USD"); }).catch(() => {});
     fetch(`${API_BASE}/api/pricing`).then(r => r.json()).then(d => { if (d?.INR) setPricing(d); }).catch(() => {});
   }, []);
   useEffect(() => {
