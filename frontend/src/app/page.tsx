@@ -811,7 +811,7 @@ export default function Home() {
               <div className="w-footer-links-grid w-footer-col">
                 {[
                   ["Product", [["#how-it-works","How It Works"],["#features","Features"],["#pricing","Pricing"],["#demo","Live Demo"],["#faq","FAQ"]]],
-                  ["Company", [["/about","About Us"],["/blog","Blog"],["/careers","Careers"],["/contact","Contact"]]],
+                  ["Company", [["/about","About Us"],["/blog","Blog"],["/contact","Contact"]]],
                   ["Legal", [["/privacy-policy","Privacy"],["/terms-of-service","Terms"],["/cookies","Cookies"]]]
                 ].map(([col, links]) => (
                   <div key={col as string}>
