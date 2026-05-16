@@ -200,6 +200,19 @@ const DEFAULT_PLAN_LIMITS: PlanLimits = {
 
 const DEFAULT_PLANS: Plan[] = [
   {
+    id: "trial", name: "7-Day Trial", priceIndia: "Free · 7-day trial",
+    features: {
+      kb: { pdf_upload: false, website_crawl: false, single_page: true, manual_text: true, faq_entry: true, csv_catalog: false, kb_delete: false },
+      leads: { view_leads: true, export_leads: false, delete_leads: false, lead_notes: false },
+      metrics: { view_metrics: false, funnel_report: false, export_report: false },
+      training: { generate_persona: false, edit_prompt: true, persona_tuning: false, generate_questions: false },
+      integrations: { whatsapp: false, webhook: false, zapier: false, email_notif: false },
+      contacts: { view_contacts: true, mark_read: true, delete_contacts: false, reply_contacts: false },
+      logs: { view_logs: true, export_logs: false, search_logs: false },
+    },
+    limits: { monthlyMessages: 200, maxBots: 1, messagesPerDay: 30, messagesPerHour: 5, apiCallsPerMinute: 3, burstLimit: 10 },
+  },
+  {
     id: "starter", name: "Starter", priceIndia: "₹5,500/mo · ₹55,000/yr",
     features: {
       kb: { pdf_upload: true, website_crawl: false, single_page: true, manual_text: true, faq_entry: true, csv_catalog: false, kb_delete: true },
@@ -445,7 +458,10 @@ function TenantRow({ tenant, plans, onUpdate }: { tenant: Tenant; plans: Plan[],
           {tenant.status}
         </span>
         <span className="text-xs font-bold text-purple-400 bg-purple-500/10 px-2 py-1 rounded-lg">{tenant.planId || "—"}</span>
-        <span className="text-[10px] font-bold text-gray-500 bg-white/5 px-2 py-1 rounded-lg">{on}/{total} features</span>
+        <span className="text-[10px] font-bold text-indigo-400 bg-indigo-500/10 px-2 py-1 rounded-lg">{tenant.botIds?.length ?? 0} bot{tenant.botIds?.length !== 1 ? "s" : ""}</span>
+        <span className="text-[10px] font-bold text-gray-600 hidden md:block">
+          {tenant.createdAt?.seconds ? new Date(tenant.createdAt.seconds * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "—"}
+        </span>
         {expanded ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
       </div>
 
@@ -478,40 +494,73 @@ function TenantRow({ tenant, plans, onUpdate }: { tenant: Tenant; plans: Plan[],
 
               {/* Basic Info */}
               {activeTab === "basic" && (
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Status</label>
-                    <select
-                      value={local.status}
-                      onChange={e => setLocal(prev => ({ ...prev, status: e.target.value as any }))}
-                      className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
+                <div className="space-y-4">
+                  {/* Onboard date + Bot count + Block button row */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-white/5 border border-white/8 rounded-xl px-4 py-3">
+                      <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Onboarded</p>
+                      <p className="text-sm font-bold text-white">
+                        {tenant.createdAt?.seconds
+                          ? new Date(tenant.createdAt.seconds * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+                          : "—"}
+                      </p>
+                    </div>
+                    <div className="bg-white/5 border border-white/8 rounded-xl px-4 py-3">
+                      <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Active Bots</p>
+                      <p className="text-sm font-bold text-indigo-400">{tenant.botIds?.length ?? 0} bot{tenant.botIds?.length !== 1 ? "s" : ""}</p>
+                    </div>
+                    <button
+                      onClick={() => setLocal(prev => ({
+                        ...prev,
+                        status: prev.status === "rejected" ? "approved" : "rejected"
+                      }))}
+                      className={`rounded-xl px-4 py-3 text-left border transition-all ${local.status === "rejected"
+                        ? "bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/20"
+                        : "bg-rose-500/10 border-rose-500/30 hover:bg-rose-500/20"
+                      }`}
                     >
-                      <option value="pending">Pending</option>
-                      <option value="approved">Approved</option>
-                      <option value="rejected">Rejected</option>
-                    </select>
+                      <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Access</p>
+                      <p className={`text-sm font-bold ${local.status === "rejected" ? "text-emerald-400" : "text-rose-400"}`}>
+                        {local.status === "rejected" ? "Unblock Access" : "Block Access"}
+                      </p>
+                    </button>
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Plan</label>
-                    <select
-                      value={local.planId || "starter"}
-                      onChange={e => applyPlan(e.target.value)}
-                      className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
-                    >
-                      {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Company Name</label>
-                    <input
-                      value={local.companyName || ""}
-                      onChange={e => setLocal(prev => ({ ...prev, companyName: e.target.value }))}
-                      placeholder="Acme Corp..."
-                      className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
-                    />
-                  </div>
-                  <div className="col-span-3 bg-indigo-500/5 border border-indigo-500/20 rounded-xl p-3 text-xs text-indigo-300">
-                    💡 Selecting a plan above will <strong>auto-apply</strong> that plan's features and rate limits. You can then fine-tune them in the other tabs.
+
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Status</label>
+                      <select
+                        value={local.status}
+                        onChange={e => setLocal(prev => ({ ...prev, status: e.target.value as any }))}
+                        className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
+                      >
+                        <option value="pending">Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Plan</label>
+                      <select
+                        value={local.planId || "starter"}
+                        onChange={e => applyPlan(e.target.value)}
+                        className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
+                      >
+                        {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Company Name</label>
+                      <input
+                        value={local.companyName || ""}
+                        onChange={e => setLocal(prev => ({ ...prev, companyName: e.target.value }))}
+                        placeholder="Acme Corp..."
+                        className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                    <div className="col-span-3 bg-indigo-500/5 border border-indigo-500/20 rounded-xl p-3 text-xs text-indigo-300">
+                      💡 Selecting a plan auto-applies features and rate limits. Fine-tune them in the other tabs.
+                    </div>
                   </div>
                 </div>
               )}
@@ -579,7 +628,18 @@ function PackageConfig({ plans, setPlans, onSave }: { plans: Plan[]; setPlans: R
 
   const activePlan = plans.find(p => p.id === activePlanId) ?? plans[0];
 
+  const [lockedPlanIds, setLockedPlanIds] = useState<Set<string>>(new Set());
+
+  const toggleLock = (planId: string) => {
+    setLockedPlanIds(prev => {
+      const next = new Set(prev);
+      next.has(planId) ? next.delete(planId) : next.add(planId);
+      return next;
+    });
+  };
+
   const planColors: Record<string, string> = {
+    trial:   "from-teal-500 to-cyan-500",
     starter: "from-gray-500 to-gray-600",
     growth:  "from-blue-600 to-indigo-600",
     business:"from-purple-600 to-violet-600",
@@ -596,9 +656,8 @@ function PackageConfig({ plans, setPlans, onSave }: { plans: Plan[]; setPlans: R
       </div>
 
       {/* Plan Selector */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-5 gap-3">
         {plans.map(plan => {
-          // count enabled sub-features
           let on = 0, total = 0;
           for (const [key, def] of Object.entries(FEATURE_MAP)) {
             for (const sf of def.subFeatures) {
@@ -607,19 +666,21 @@ function PackageConfig({ plans, setPlans, onSave }: { plans: Plan[]; setPlans: R
               if (sub && (typeof sub === "boolean" ? sub : sub[sf.key])) on++;
             }
           }
+          const isLocked = lockedPlanIds.has(plan.id);
           return (
             <button
               key={plan.id}
               onClick={() => setActivePlanId(plan.id)}
               className={`relative rounded-2xl p-4 border transition-all text-left ${activePlanId === plan.id ? "border-white/30 bg-white/10" : "border-white/10 bg-white/[0.02] hover:bg-white/5"}`}
             >
-              <div className={`flex items-center gap-2 mb-2`}>
+              <div className="flex items-center gap-2 mb-2">
                 <div className={`w-6 h-6 rounded-lg bg-gradient-to-br ${planColors[plan.id] || "from-gray-500 to-gray-600"} flex items-center justify-center shrink-0`}>
                   <Crown size={11} className="text-white" />
                 </div>
-                <h3 className="text-sm font-black text-white">{plan.name}</h3>
+                <h3 className="text-sm font-black text-white truncate">{plan.name}</h3>
+                {isLocked && <Lock size={10} className="text-amber-400 shrink-0 ml-auto" />}
               </div>
-              <p className="text-[10px] text-gray-500 font-bold">{on}/{total} features enabled</p>
+              <p className="text-[10px] text-gray-500 font-bold">{on}/{total} features</p>
               <p className="text-[10px] text-gray-600 mt-0.5">{plan.limits.monthlyMessages.toLocaleString()} msg/mo</p>
               {activePlanId === plan.id && <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-3 h-3 bg-white/20 rotate-45 border border-white/20" />}
             </button>
@@ -645,17 +706,35 @@ function PackageConfig({ plans, setPlans, onSave }: { plans: Plan[]; setPlans: R
       </div>
 
       {activePlan && (
-        <div className="bg-white/[0.02] border border-white/10 rounded-2xl p-5">
+        <div className={`bg-white/[0.02] border rounded-2xl p-5 ${lockedPlanIds.has(activePlan.id) ? "border-amber-500/30" : "border-white/10"}`}>
+          {/* Lock banner */}
+          {lockedPlanIds.has(activePlan.id) && (
+            <div className="flex items-center gap-2 mb-4 bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-2.5">
+              <Lock size={13} className="text-amber-400 shrink-0" />
+              <p className="text-xs font-bold text-amber-300">This plan is locked. Unlock to make changes.</p>
+              <button onClick={() => toggleLock(activePlan.id)} className="ml-auto text-[10px] font-black text-amber-400 hover:text-amber-300 underline">Unlock</button>
+            </div>
+          )}
+
           {/* Pricing */}
           {activeSection === "pricing" && (
             <div className="space-y-4">
-              <h4 className="font-bold text-white text-sm">Pricing — {activePlan.name}</h4>
+              <div className="flex items-center justify-between">
+                <h4 className="font-bold text-white text-sm">Pricing — {activePlan.name}</h4>
+                <button
+                  onClick={() => toggleLock(activePlan.id)}
+                  className={`flex items-center gap-1.5 text-[10px] font-black px-3 py-1.5 rounded-lg border transition-all ${lockedPlanIds.has(activePlan.id) ? "text-amber-400 bg-amber-500/10 border-amber-500/20" : "text-gray-500 bg-white/5 border-white/10 hover:text-amber-400 hover:border-amber-500/20"}`}
+                >
+                  {lockedPlanIds.has(activePlan.id) ? <><Lock size={10} /> Locked</> : <><Unlock size={10} /> Lock Plan</>}
+                </button>
+              </div>
               <div>
                 <label className="text-[10px] text-gray-500 uppercase tracking-widest">India Price (₹)</label>
                 <input
+                  disabled={lockedPlanIds.has(activePlan.id)}
                   value={activePlan.priceIndia}
                   onChange={e => updatePlan(activePlan.id, { priceIndia: e.target.value })}
-                  className="w-full mt-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
+                  className="w-full mt-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed"
                   placeholder="e.g. ₹5,500/mo · ₹55,000/yr"
                 />
               </div>
@@ -667,21 +746,25 @@ function PackageConfig({ plans, setPlans, onSave }: { plans: Plan[]; setPlans: R
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h4 className="font-bold text-white text-sm">Feature Access — {activePlan.name}</h4>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => updatePlan(activePlan.id, { features: buildDefaultFeatures(true) })}
-                    className="text-[10px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-lg hover:bg-emerald-500/20 transition-all"
-                  >Enable All</button>
-                  <button
-                    onClick={() => updatePlan(activePlan.id, { features: buildDefaultFeatures(false) })}
-                    className="text-[10px] font-black text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-1 rounded-lg hover:bg-rose-500/20 transition-all"
-                  >Disable All</button>
-                </div>
+                {!lockedPlanIds.has(activePlan.id) && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => updatePlan(activePlan.id, { features: buildDefaultFeatures(true) })}
+                      className="text-[10px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-lg hover:bg-emerald-500/20 transition-all"
+                    >Enable All</button>
+                    <button
+                      onClick={() => updatePlan(activePlan.id, { features: buildDefaultFeatures(false) })}
+                      className="text-[10px] font-black text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-1 rounded-lg hover:bg-rose-500/20 transition-all"
+                    >Disable All</button>
+                  </div>
+                )}
               </div>
-              <MicroFeatureGrid
-                features={activePlan.features}
-                onChange={updated => updatePlan(activePlan.id, { features: updated })}
-              />
+              <div className={lockedPlanIds.has(activePlan.id) ? "pointer-events-none opacity-50" : ""}>
+                <MicroFeatureGrid
+                  features={activePlan.features}
+                  onChange={updated => updatePlan(activePlan.id, { features: updated })}
+                />
+              </div>
             </div>
           )}
 
@@ -706,10 +789,12 @@ function PackageConfig({ plans, setPlans, onSave }: { plans: Plan[]; setPlans: R
                   <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Per Hour</p>
                 </div>
               </div>
-              <RateLimitEditor
-                limits={activePlan.limits}
-                onChange={l => updatePlan(activePlan.id, { limits: l })}
-              />
+              <div className={lockedPlanIds.has(activePlan.id) ? "pointer-events-none opacity-50" : ""}>
+                <RateLimitEditor
+                  limits={activePlan.limits}
+                  onChange={l => updatePlan(activePlan.id, { limits: l })}
+                />
+              </div>
             </div>
           )}
         </div>
@@ -749,7 +834,7 @@ export default function SuperAdminPanel() {
       if (!plansSnap.empty) {
         const loadedPlans: Plan[] = [];
         plansSnap.forEach(d => loadedPlans.push({ id: d.id, ...d.data() } as Plan));
-        const order = ["starter", "growth", "business", "pro"];
+        const order = ["trial", "starter", "growth", "business", "pro"];
         loadedPlans.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
         setPlans(loadedPlans.length > 0 ? loadedPlans : DEFAULT_PLANS);
       }
@@ -835,11 +920,11 @@ export default function SuperAdminPanel() {
                           </div>
                           <div>
                               <div className="flex justify-between text-[11px] font-bold text-gray-400 mb-2">
-                                  <span>MESSAGE THROUGHPUT</span>
-                                  <span className="text-blue-400">8.2k msg/hr</span>
+                                  <span>ACTIVE TENANTS</span>
+                                  <span className="text-blue-400">{stats.approvedCount}/{stats.total}</span>
                               </div>
                               <div className="h-1 w-40 bg-white/5 rounded-full overflow-hidden">
-                                  <div className="h-full bg-blue-500 w-[65%]" />
+                                  <div className="h-full bg-blue-500" style={{ width: `${stats.total > 0 ? Math.round((stats.approvedCount / stats.total) * 100) : 0}%` }} />
                               </div>
                           </div>
                       </div>
@@ -854,21 +939,36 @@ export default function SuperAdminPanel() {
                 Global Activity Pulse
              </h3>
              <div className="flex-1 space-y-4 overflow-y-auto pr-2 custom-scrollbar max-h-[300px] lg:max-h-none">
-                {[
-                  { user: "Acme", action: "Hot Lead Detected", time: "2m ago", color: "text-rose-400", bg: "bg-rose-500/10" },
-                  { user: "Glow Salon", action: "Bot Trained", time: "5m ago", color: "text-indigo-400", bg: "bg-indigo-500/10" },
-                  { user: "City Clinic", action: "New Booking", time: "12m ago", color: "text-emerald-400", bg: "bg-emerald-500/10" },
-                  { user: "Spice Garden", action: "Webhook Fired", time: "18m ago", color: "text-amber-400", bg: "bg-amber-500/10" },
-                  { user: "Maya AI", action: "Source Synced", time: "24m ago", color: "text-blue-400", bg: "bg-blue-500/10" },
-                ].map((act, idx) => (
-                  <div key={idx} className="flex gap-3 relative before:absolute before:left-2 before:top-8 before:bottom-0 before:w-px before:bg-white/5 last:before:hidden">
-                    <div className={`w-4 h-4 rounded-full ${act.bg} border border-white/5 shrink-0 mt-1`} />
-                    <div className="min-w-0">
-                      <p className="text-[11px] text-gray-400"><strong className="text-gray-200">{act.user}</strong> · {act.time}</p>
-                      <p className={`text-[10px] font-bold ${act.color} uppercase tracking-tighter`}>{act.action}</p>
+                {tenants.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-center gap-2">
+                    <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">
+                      <Users size={14} className="text-gray-600" />
                     </div>
+                    <p className="text-[11px] text-gray-600">No tenants yet</p>
                   </div>
-                ))}
+                ) : (
+                  [...tenants]
+                    .sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0))
+                    .slice(0, 5)
+                    .map((t, idx) => {
+                      const name = t.companyName || t.name || t.email.split("@")[0];
+                      const plan = t.planId ? t.planId.charAt(0).toUpperCase() + t.planId.slice(1) : "No plan";
+                      const isApproved = t.status === "approved";
+                      const isPending = t.status === "pending";
+                      const action = isApproved ? "Account Active" : isPending ? "Awaiting Review" : "Access Revoked";
+                      const color = isApproved ? "text-emerald-400" : isPending ? "text-amber-400" : "text-rose-400";
+                      const bg = isApproved ? "bg-emerald-500/10" : isPending ? "bg-amber-500/10" : "bg-rose-500/10";
+                      return (
+                        <div key={t.uid} className="flex gap-3 relative before:absolute before:left-2 before:top-8 before:bottom-0 before:w-px before:bg-white/5 last:before:hidden">
+                          <div className={`w-4 h-4 rounded-full ${bg} border border-white/5 shrink-0 mt-1`} />
+                          <div className="min-w-0">
+                            <p className="text-[11px] text-gray-400 truncate"><strong className="text-gray-200">{name}</strong> · <span className="text-gray-600">{plan}</span></p>
+                            <p className={`text-[10px] font-bold ${color} uppercase tracking-tighter`}>{action}</p>
+                          </div>
+                        </div>
+                      );
+                    })
+                )}
              </div>
              <button className="mt-6 w-full py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black text-gray-500 hover:text-white transition-all border border-white/5">
                 VIEW GLOBAL LOGS

@@ -152,7 +152,8 @@ export default function SettingsView() {
     const fetchBots = () => {
         if (!user) return;
         setLoading(true);
-        const botIdsParam = user.role === "super_admin" ? "" : `?bot_ids=${user.botIds?.join(",") || "NONE"}`;
+        const ids = user.botIds?.join(",") || "NONE";
+        const botIdsParam = `?bot_ids=${ids}`;
         authFetch(`${API_BASE}/api/admin/bots${botIdsParam}`)
             .then(res => res.json())
             .then(data => {
@@ -257,14 +258,21 @@ export default function SettingsView() {
     };
 
 
+    const generateBotId = (name: string) => {
+        const slug = name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "").slice(0, 28);
+        const suffix = Math.random().toString(36).slice(2, 7);
+        return `${slug}-${suffix}`;
+    };
+
     const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSaving(true);
         try {
+            const payload = { ...newBot, id: generateBotId(newBot.name) };
             const res = await authFetch(`${API_BASE}/api/admin/bots`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(newBot)
+                body: JSON.stringify(payload)
             });
             if (res.ok) {
                 setCreatingBot(false);
@@ -392,7 +400,6 @@ export default function SettingsView() {
                                     </button>
                                 </div>
                             </div>
-                            <div className="flex justify-between pt-2"><span>Bot ID</span> <span className="text-gray-500 font-mono text-xs">{bot.id}</span></div>
                         </div>
                         <div className="mt-6 flex gap-3">
                             <button onClick={() => { setEditingBot({ ...bot }); setConfigureTab("persona_prompt"); }} className="flex-1 bg-white/10 hover:bg-white/20 text-white py-2 rounded-lg text-sm font-semibold transition-colors">Configure</button>
@@ -879,15 +886,11 @@ export default function SettingsView() {
                         </div>
                         <form onSubmit={handleCreate} className="p-6 space-y-4 overflow-y-auto">
                             <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-400 mb-1">Bot ID <span className="text-gray-600">(unique)</span></label>
-                                    <input type="text" required value={newBot.id} onChange={e => setNewBot(p => ({ ...p, id: e.target.value.replace(/\s/g, "_").toLowerCase() }))}
-                                        placeholder="e.g. spa_ai" className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-red-500 transition-colors" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-400 mb-1">Display Name</label>
+                                <div className="col-span-2">
+                                    <label className="block text-sm font-medium text-gray-400 mb-1">Bot Name</label>
                                     <input type="text" required value={newBot.name} onChange={e => setNewBot(p => ({ ...p, name: e.target.value }))}
                                         placeholder="e.g. Aria" className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-red-500 transition-colors" />
+                                    {newBot.name && <p className="text-[10px] text-gray-600 mt-1 font-mono">embed id: {newBot.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "").slice(0, 28)}-•••••</p>}
                                 </div>
                                 <div className="col-span-2">
                                     <label className="block text-sm font-medium text-gray-400 mb-1">Role / Title</label>

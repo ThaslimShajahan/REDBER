@@ -679,7 +679,7 @@ export default function Home() {
                 <span style={{ fontSize: "0.62rem", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.6)" }}>Zero Risk</span>
               </div>
               <h2 style={{ fontSize: "clamp(1.8rem, 3.5vw, 3rem)", fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1.08, color: "#fff", marginBottom: "1rem" }}>
-                Try Redber free for <span style={{ background: "linear-gradient(135deg,#2563EB,#0EA5E9)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>14 days.</span>
+                Try Redber free for <span style={{ background: "linear-gradient(135deg,#2563EB,#0EA5E9)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>7 days.</span>
               </h2>
               <p style={{ fontSize: "0.95rem", color: "rgba(255,255,255,0.45)", lineHeight: 1.75, maxWidth: 480, marginBottom: "2.5rem" }}>
                 We set it up on your website for you — no code, no credit card. See real customers engaging with your AI receptionist before you pay a single rupee.

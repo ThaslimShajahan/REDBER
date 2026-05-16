@@ -202,17 +202,14 @@ async def _get_user_bot_ids_from_firestore(uid: str) -> list[str]:
 
 async def get_user_bots(decoded_token: dict = Depends(get_current_user)) -> list[str] | None:
     """
-    Returns None (= all bots) for super-admins.
-    Returns a list of allowed bot IDs for regular tenants.
-    When ENFORCE_TENANT_ISOLATION=false (MVP mode) everyone gets None.
+    Returns a list of bot IDs owned by this user (from Firestore botIds).
+    Every user — including super-admin — only sees bots they personally created.
+    When ENFORCE_TENANT_ISOLATION=false (MVP mode) everyone gets None (all bots).
     """
     uid = decoded_token.get("uid")
 
     if not ENFORCE_TENANT_ISOLATION:
         return None  # MVP: everyone sees all bots
-
-    if uid == SUPER_ADMIN_UID:
-        return None  # super-admin sees everything
 
     try:
         return await _get_user_bot_ids_from_firestore(uid)

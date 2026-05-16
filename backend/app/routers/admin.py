@@ -929,7 +929,7 @@ Rules:
 
 
 @router.post("/bots")
-async def create_bot(request: BotCreateRequest):
+async def create_bot(request: BotCreateRequest, current_user: dict = Depends(get_current_user)):
     supabase = get_supabase_client()
     if not supabase:
         raise HTTPException(status_code=500, detail="Database credentials missing.")
@@ -947,18 +947,44 @@ async def create_bot(request: BotCreateRequest):
             "persona_config": request.persona_config,
             "allowed_domains": request.allowed_domains,
         }).execute()
+
+        # Link bot to creator's Firestore botIds so they can see it in their dashboard
+        uid = current_user.get("uid")
+        if uid:
+            from ..dependencies.auth import _ensure_firebase_admin
+            if _ensure_firebase_admin():
+                from firebase_admin import firestore as fstore
+                import asyncio
+                db_fs = fstore.client()
+                user_ref = db_fs.collection("users").document(uid)
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, lambda: user_ref.update({"botIds": fstore.ArrayUnion([request.id])}))
+
         return {"status": "created", "id": request.id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/bots/{bot_id}")
-async def delete_bot(bot_id: str):
+async def delete_bot(bot_id: str, current_user: dict = Depends(get_current_user)):
     supabase = get_supabase_client()
     if not supabase:
         raise HTTPException(status_code=500, detail="Database credentials missing.")
     try:
         supabase.table("bots").delete().eq("id", bot_id).execute()
+
+        # Remove from owner's Firestore botIds
+        uid = current_user.get("uid")
+        if uid:
+            from ..dependencies.auth import _ensure_firebase_admin
+            if _ensure_firebase_admin():
+                from firebase_admin import firestore as fstore
+                import asyncio
+                db_fs = fstore.client()
+                user_ref = db_fs.collection("users").document(uid)
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, lambda: user_ref.update({"botIds": fstore.ArrayRemove([bot_id])}))
+
         return {"status": "deleted"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
