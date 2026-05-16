@@ -1,223 +1,190 @@
 "use client";
 
-import { Suspense } from "react";
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mail, Phone, MapPin, Send, CheckCircle, ArrowLeft, MessageSquare } from "lucide-react";
+import { Mail, Phone, MapPin, Send, CheckCircle, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { API_BASE } from "../../lib/api";
 
+const STYLES = `
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  .pg-wrap { font-family: 'Plus Jakarta Sans', sans-serif; background: #fff; color: #0A0A14; min-height: 100vh; }
+  .pg-nav { position: fixed; top: 1.2rem; left: 50%; transform: translateX(-50%); width: calc(100% - 3rem); max-width: 1160px; z-index: 100; background: rgba(255,255,255,0.92); backdrop-filter: blur(20px); border: 1px solid #E5E7EB; border-radius: 14px; padding: 0 1.5rem; box-shadow: 0 4px 24px rgba(37,99,235,0.08); }
+  .pg-nav-inner { display: flex; align-items: center; justify-content: space-between; height: 58px; }
+  .pg-back { display: inline-flex; align-items: center; gap: 0.5rem; color: #4B5563; font-size: 0.84rem; font-weight: 600; text-decoration: none; transition: color 0.2s; }
+  .pg-back:hover { color: #2563EB; }
+  .pg-main { max-width: 1160px; margin: 0 auto; padding: 9rem 2.5rem 6rem; display: grid; grid-template-columns: 1fr 1.1fr; gap: 6rem; align-items: start; }
+  .pg-chip { display: inline-flex; align-items: center; gap: 0.5rem; border: 1px solid rgba(37,99,235,0.22); border-radius: 999px; padding: 0.32rem 0.9rem; font-size: 0.67rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #2563EB; background: #EFF6FF; margin-bottom: 1.5rem; }
+  .pg-h1 { font-size: clamp(2.5rem, 5vw, 4rem); font-weight: 800; letter-spacing: -0.04em; line-height: 1.05; color: #0A0A14; margin-bottom: 1.25rem; }
+  .pg-grad { background: linear-gradient(135deg, #2563EB 0%, #0EA5E9 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .pg-sub { font-size: 1rem; color: #4B5563; line-height: 1.75; max-width: 420px; margin-bottom: 3rem; }
+  .pg-info { display: flex; flex-direction: column; gap: 1.5rem; }
+  .pg-info-row { display: flex; align-items: center; gap: 1rem; }
+  .pg-info-icon { width: 44px; height: 44px; border-radius: 12px; background: #EFF6FF; border: 1px solid rgba(37,99,235,0.18); display: flex; align-items: center; justify-content: center; color: #2563EB; flex-shrink: 0; }
+  .pg-info-label { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #9CA3AF; }
+  .pg-info-val { font-size: 1rem; font-weight: 600; color: #0A0A14; margin-top: 0.2rem; text-decoration: none; transition: color 0.2s; }
+  .pg-info-val:hover { color: #2563EB; }
+  .pg-form-card { background: #F7F8FF; border: 1px solid #E5E7EB; border-radius: 24px; padding: 2.5rem; }
+  .pg-field { margin-bottom: 1.25rem; }
+  .pg-label { display: block; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #6B7280; margin-bottom: 0.5rem; }
+  .pg-input { width: 100%; background: #fff; border: 1.5px solid #E5E7EB; border-radius: 12px; padding: 0.875rem 1.1rem; font-size: 0.9rem; color: #0A0A14; font-family: 'Plus Jakarta Sans', sans-serif; outline: none; transition: border-color 0.2s; }
+  .pg-input::placeholder { color: #9CA3AF; }
+  .pg-input:focus { border-color: #2563EB; }
+  .pg-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .pg-btn { width: 100%; background: #0A0A14; color: #fff; border: none; border-radius: 12px; padding: 1rem; font-size: 0.9rem; font-weight: 700; font-family: 'Plus Jakarta Sans', sans-serif; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; transition: all 0.2s; letter-spacing: 0.02em; }
+  .pg-btn:hover { background: #1a1a2e; transform: translateY(-1px); box-shadow: 0 6px 24px rgba(0,0,0,0.18); }
+  .pg-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+  .pg-err { background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.2); border-radius: 10px; padding: 0.875rem 1rem; font-size: 0.84rem; color: #DC2626; margin-bottom: 1.25rem; }
+  .pg-success { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 3rem 1.5rem; gap: 1rem; }
+  .pg-success-icon { width: 72px; height: 72px; background: #EFF6FF; border: 1px solid rgba(37,99,235,0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #2563EB; }
+  .pg-reset { background: #F7F8FF; border: 1.5px solid #E5E7EB; border-radius: 10px; padding: 0.7rem 1.5rem; font-size: 0.84rem; font-weight: 600; font-family: 'Plus Jakarta Sans', sans-serif; cursor: pointer; color: #4B5563; transition: all 0.2s; }
+  .pg-reset:hover { border-color: #2563EB; color: #2563EB; }
+  @media(max-width:900px){ .pg-main{grid-template-columns:1fr;gap:3rem;} }
+  @media(max-width:640px){ .pg-main{padding:8rem 1.5rem 4rem;} .pg-row2{grid-template-columns:1fr;} }
+`;
+
 function ContactFormContent() {
-    const searchParams = useSearchParams();
-    const [formData, setFormData] = useState({ name: "", email: "", subject: "", message: "" });
-    const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
+  const searchParams = useSearchParams();
+  const [formData, setFormData] = useState({ name: "", email: "", subject: "", message: "" });
+  const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
 
-    useEffect(() => {
-        const subject = searchParams.get("subject");
-        const message = searchParams.get("message");
-        if (subject || message) {
-            setFormData(prev => ({
-                ...prev,
-                ...(subject && { subject }),
-                ...(message && { message })
-            }));
-        }
-    }, [searchParams]);
+  useEffect(() => {
+    const subject = searchParams.get("subject");
+    const message = searchParams.get("message");
+    if (subject || message) {
+      setFormData(prev => ({
+        ...prev,
+        ...(subject && { subject }),
+        ...(message && { message }),
+      }));
+    }
+  }, [searchParams]);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setStatus("submitting");
-        try {
-            const res = await fetch(`${API_BASE}/api/admin/contacts`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(formData),
-            });
-            if (res.ok) {
-                setStatus("success");
-                setFormData({ name: "", email: "", subject: "", message: "" });
-            } else {
-                setStatus("error");
-            }
-        } catch {
-            setStatus("error");
-        }
-    };
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setStatus("submitting");
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/contacts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
+      if (res.ok) {
+        setStatus("success");
+        setFormData({ name: "", email: "", subject: "", message: "" });
+      } else {
+        setStatus("error");
+      }
+    } catch {
+      setStatus("error");
+    }
+  };
 
-    return (
-        <div className="min-h-screen bg-[#0d0d0d] text-white font-sans selection:bg-[#C6F432] selection:text-[#0d0d0d] overflow-hidden relative">
-            {/* Dynamic Background */}
-            <div className="fixed inset-0 pointer-events-none z-0">
-                <div className="absolute top-[-10%] right-[-10%] w-[60vw] h-[60vh] bg-[#C6F432]/5 blur-[150px] rounded-full" />
-                <div className="absolute bottom-[-10%] left-[-10%] w-[50vw] h-[50vh] bg-[#64dcff]/5 blur-[150px] rounded-full" />
-                <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] mix-blend-overlay" />
-            </div>
+  return (
+    <div className="pg-wrap">
+      <style>{STYLES}</style>
 
-            <nav className="fixed top-0 w-full z-50 backdrop-blur-xl bg-[#0d0d0d]/80 border-b border-white/5">
-                <div className="max-w-7xl mx-auto px-6 h-20 flex justify-between items-center">
-                    <Link href="/" className="flex items-center gap-3 group">
-                        <ArrowLeft size={18} className="text-white/40 group-hover:text-white group-hover:-translate-x-1 transition-all" />
-                        <span className="font-bold text-white/60 group-hover:text-white transition-colors text-sm tracking-wide uppercase">Back</span>
-                    </Link>
-                    <div className="flex items-center gap-2">
-                        <img src="/logo/Redber Logo white.svg" alt="Redber" className="h-7 w-auto" />
-                    </div>
-                </div>
-            </nav>
-
-            <main className="relative z-10 pt-32 pb-24 px-6 max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-                <motion.div
-                    initial={{ opacity: 0, x: -30 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.8 }}
-                >
-                    <div className="inline-flex items-center gap-2 bg-[#C6F432]/10 border border-[#C6F432]/20 text-[#C6F432] text-xs font-bold px-4 py-2 rounded-full mb-8">
-                        <MessageSquare size={14} />
-                        Get in Touch
-                    </div>
-                    <h1 className="text-5xl md:text-7xl font-black tracking-tighter mb-8 leading-[1.05] text-white">
-                        Let's build <br />
-                        <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#C6F432] to-[#64dcff]">something iconic.</span>
-                    </h1>
-                    <p className="text-lg md:text-xl text-white/50 mb-12 max-w-lg leading-relaxed font-medium">
-                        Have questions about our AI employees? Need a custom solution? Reach out and our team will get back to you within 24 hours.
-                    </p>
-
-                    <div className="space-y-6">
-                        {[
-                            { icon: Mail, title: "Email us", data: "customercare@redber.in", href: "mailto:customercare@redber.in" },
-                            { icon: Phone, title: "Call / WhatsApp", data: "+91 6238910451", href: "tel:+916238910451" },
-                            { icon: MapPin, title: "Serving clients", data: "India & Globally", href: null }
-                        ].map((item, i) => (
-                            <div key={i} className="flex gap-5 items-center group">
-                                <div className="w-12 h-12 rounded-2xl border border-white/5 flex items-center justify-center text-white/60 bg-white/5 shrink-0 group-hover:border-[#C6F432]/30 group-hover:text-[#C6F432] transition-colors">
-                                    <item.icon size={20} />
-                                </div>
-                                <div>
-                                    <h4 className="text-xs font-bold text-white/30 uppercase tracking-widest">{item.title}</h4>
-                                    {item.href ? (
-                                        <a href={item.href} className="font-semibold text-lg mt-1 block hover:opacity-80 transition-opacity text-white">{item.data}</a>
-                                    ) : (
-                                        <p className="text-white font-semibold text-lg mt-1">{item.data}</p>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </motion.div>
-
-                <motion.div
-                    initial={{ opacity: 0, y: 30 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.8, delay: 0.2 }}
-                    className="relative"
-                >
-                    <div className="bg-[#141414] border border-white/10 p-8 md:p-12 rounded-[32px] shadow-2xl overflow-hidden relative">
-                        <AnimatePresence mode="wait">
-                            {status === "success" ? (
-                                <motion.div
-                                    key="success"
-                                    initial={{ opacity: 0, scale: 0.9 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    exit={{ opacity: 0, scale: 0.9 }}
-                                    className="py-16 text-center space-y-6"
-                                >
-                                    <div className="w-20 h-20 bg-[#C6F432]/10 text-[#C6F432] border border-[#C6F432]/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                                        <CheckCircle size={40} />
-                                    </div>
-                                    <h2 className="text-3xl font-bold text-white">Message Received!</h2>
-                                    <p className="text-white/50">Thanks for reaching out. We'll get back to you within 24 hours.</p>
-                                    <button
-                                        onClick={() => setStatus("idle")}
-                                        className="bg-white/5 border border-white/10 hover:bg-white/10 text-white px-8 py-3 rounded-xl transition-colors font-bold text-sm"
-                                    >
-                                        Send another message
-                                    </button>
-                                </motion.div>
-                            ) : (
-                                <motion.form
-                                    key="form"
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    onSubmit={handleSubmit}
-                                    className="space-y-5"
-                                >
-                                    {status === "error" && (
-                                        <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm font-medium px-4 py-3 rounded-xl">
-                                            Something went wrong. Please try emailing us directly at{" "}
-                                            <a href="mailto:customercare@redber.in" className="underline">customercare@redber.in</a>
-                                        </div>
-                                    )}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                        <div className="space-y-1.5">
-                                            <label className="text-[0.65rem] font-bold text-white/40 uppercase tracking-widest ml-1">Full Name</label>
-                                            <input
-                                                required
-                                                type="text"
-                                                value={formData.name}
-                                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                                placeholder="Enter your name"
-                                                className="w-full bg-white/5 border border-white/10 px-5 py-4 rounded-xl outline-none focus:border-[#C6F432]/50 focus:ring-1 focus:ring-[#C6F432]/50 transition-all font-medium placeholder:text-white/20 text-white"
-                                            />
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            <label className="text-[0.65rem] font-bold text-white/40 uppercase tracking-widest ml-1">Email</label>
-                                            <input
-                                                required
-                                                type="email"
-                                                value={formData.email}
-                                                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                                                placeholder="john@company.com"
-                                                className="w-full bg-white/5 border border-white/10 px-5 py-4 rounded-xl outline-none focus:border-[#C6F432]/50 focus:ring-1 focus:ring-[#C6F432]/50 transition-all font-medium placeholder:text-white/20 text-white"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-[0.65rem] font-bold text-white/40 uppercase tracking-widest ml-1">Subject</label>
-                                        <input
-                                            required
-                                            type="text"
-                                            value={formData.subject}
-                                            onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-                                            placeholder="Partnership, Custom Bot, etc."
-                                            className="w-full bg-white/5 border border-white/10 px-5 py-4 rounded-xl outline-none focus:border-[#C6F432]/50 focus:ring-1 focus:ring-[#C6F432]/50 transition-all font-medium placeholder:text-white/20 text-white"
-                                        />
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-[0.65rem] font-bold text-white/40 uppercase tracking-widest ml-1">How can we help?</label>
-                                        <textarea
-                                            required
-                                            rows={5}
-                                            value={formData.message}
-                                            onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-                                            placeholder="Tell us about your needs..."
-                                            className="w-full bg-white/5 border border-white/10 px-5 py-4 rounded-xl outline-none focus:border-[#C6F432]/50 focus:ring-1 focus:ring-[#C6F432]/50 transition-all font-medium placeholder:text-white/20 text-white resize-none"
-                                        />
-                                    </div>
-                                    <button
-                                        disabled={status === "submitting"}
-                                        type="submit"
-                                        className="w-full bg-[#C6F432] hover:bg-[#aad424] text-[#0d0d0d] font-bold py-4 rounded-xl shadow-[0_4px_24px_rgba(198,244,50,0.15)] hover:shadow-[0_8px_32px_rgba(198,244,50,0.25)] hover:-translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-[0.95rem] uppercase tracking-wider"
-                                    >
-                                        {status === "submitting" ? "Sending..." : <><Send size={18} /> Send Message</>}
-                                    </button>
-                                </motion.form>
-                            )}
-                        </AnimatePresence>
-                    </div>
-                </motion.div>
-            </main>
+      <nav className="pg-nav">
+        <div className="pg-nav-inner">
+          <Link href="/" className="pg-back">
+            <ArrowLeft size={16} /> Back to Home
+          </Link>
+          <img src="/logo/Redber Logo Black.svg" alt="Redber" style={{ width: 96, height: "auto" }}
+            onError={e => { (e.target as HTMLImageElement).src = "/logo/Redber Logo white.svg"; (e.target as HTMLImageElement).style.filter = "invert(1)"; }} />
         </div>
-    );
+      </nav>
+
+      <main className="pg-main">
+        <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.6 }}>
+          <div className="pg-chip">Get in Touch</div>
+          <h1 className="pg-h1">
+            Let&apos;s build<br />
+            <span className="pg-grad">something iconic.</span>
+          </h1>
+          <p className="pg-sub">
+            Questions about our AI employees? Need a custom solution? Reach out and we&apos;ll get back to you within 24 hours.
+          </p>
+
+          <div className="pg-info">
+            {[
+              { icon: Mail, label: "Email us", val: "customercare@redber.in", href: "mailto:customercare@redber.in" },
+              { icon: Phone, label: "Call / WhatsApp", val: "+91 6238910451", href: "tel:+916238910451" },
+              { icon: MapPin, label: "Serving clients", val: "India & Globally", href: null },
+            ].map((item, i) => (
+              <div key={i} className="pg-info-row">
+                <div className="pg-info-icon"><item.icon size={18} /></div>
+                <div>
+                  <div className="pg-info-label">{item.label}</div>
+                  {item.href
+                    ? <a href={item.href} className="pg-info-val" style={{ display: "block" }}>{item.val}</a>
+                    : <div className="pg-info-val">{item.val}</div>
+                  }
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.15 }}>
+          <div className="pg-form-card">
+            <AnimatePresence mode="wait">
+              {status === "success" ? (
+                <motion.div key="success" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="pg-success">
+                  <div className="pg-success-icon"><CheckCircle size={36} /></div>
+                  <div style={{ fontSize: "1.4rem", fontWeight: 800, letterSpacing: "-0.03em" }}>Message Received!</div>
+                  <p style={{ color: "#4B5563", fontSize: "0.9rem", maxWidth: 280 }}>Thanks for reaching out. We&apos;ll get back to you within 24 hours.</p>
+                  <button onClick={() => setStatus("idle")} className="pg-reset">Send another message</button>
+                </motion.div>
+              ) : (
+                <motion.form key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onSubmit={handleSubmit}>
+                  {status === "error" && (
+                    <div className="pg-err">
+                      Something went wrong. Please email us at{" "}
+                      <a href="mailto:customercare@redber.in" style={{ color: "#DC2626", fontWeight: 700 }}>customercare@redber.in</a>
+                    </div>
+                  )}
+                  <div className="pg-row2">
+                    <div className="pg-field">
+                      <label className="pg-label">Full Name</label>
+                      <input required type="text" className="pg-input" placeholder="Your name"
+                        value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
+                    </div>
+                    <div className="pg-field">
+                      <label className="pg-label">Email</label>
+                      <input required type="email" className="pg-input" placeholder="john@company.com"
+                        value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
+                    </div>
+                  </div>
+                  <div className="pg-field">
+                    <label className="pg-label">Subject</label>
+                    <input required type="text" className="pg-input" placeholder="Partnership, Custom Bot, etc."
+                      value={formData.subject} onChange={e => setFormData({ ...formData, subject: e.target.value })} />
+                  </div>
+                  <div className="pg-field">
+                    <label className="pg-label">How can we help?</label>
+                    <textarea required rows={5} className="pg-input" placeholder="Tell us about your needs…"
+                      style={{ resize: "none" }}
+                      value={formData.message} onChange={e => setFormData({ ...formData, message: e.target.value })} />
+                  </div>
+                  <button type="submit" className="pg-btn" disabled={status === "submitting"}>
+                    {status === "submitting" ? "Sending…" : <><Send size={16} /> Send Message</>}
+                  </button>
+                </motion.form>
+              )}
+            </AnimatePresence>
+          </div>
+        </motion.div>
+      </main>
+    </div>
+  );
 }
 
 export default function ContactPage() {
-    return (
-        <Suspense fallback={<div className="min-h-screen bg-[#0d0d0d]" />}>
-            <ContactFormContent />
-        </Suspense>
-    );
+  return (
+    <Suspense fallback={<div style={{ background: "#fff", minHeight: "100vh" }} />}>
+      <ContactFormContent />
+    </Suspense>
+  );
 }
-

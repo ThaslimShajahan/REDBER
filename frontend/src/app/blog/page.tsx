@@ -4,46 +4,67 @@ import Link from "next/link";
 import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import { motion } from "framer-motion";
 
-export default function BlogPage() {
-  const posts = [
-    { title: "How AI is Reshaping Customer Service in 2026", date: "April 18, 2026", category: "Trends", slug: "ai-reshaping-customer-service" },
-    { title: "The Hidden Cost of Missed Leads (And How to Fix It)", date: "March 24, 2026", category: "Business", slug: "hidden-cost-missed-leads" },
-    { title: "Introducing Redber: Your 24/7 Virtual Receptionist", date: "February 10, 2026", category: "Product Update", slug: "introducing-redber" },
-  ];
+const STYLES = `
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+  .pg-wrap { font-family: 'Plus Jakarta Sans', sans-serif; background: #fff; color: #0A0A14; min-height: 100vh; }
+  .pg-nav { position: fixed; top: 1.2rem; left: 50%; transform: translateX(-50%); width: calc(100% - 3rem); max-width: 1160px; z-index: 100; background: rgba(255,255,255,0.92); backdrop-filter: blur(20px); border: 1px solid #E5E7EB; border-radius: 14px; padding: 0 1.5rem; box-shadow: 0 4px 24px rgba(37,99,235,0.08); }
+  .pg-nav-inner { display: flex; align-items: center; justify-content: space-between; height: 58px; }
+  .pg-back { display: inline-flex; align-items: center; gap: 0.5rem; color: #4B5563; font-size: 0.84rem; font-weight: 600; text-decoration: none; transition: color 0.2s; }
+  .pg-back:hover { color: #2563EB; }
+  .pg-main { max-width: 1100px; margin: 0 auto; padding: 9rem 2.5rem 6rem; }
+  .pg-chip { display: inline-flex; align-items: center; gap: 0.5rem; border: 1px solid rgba(37,99,235,0.22); border-radius: 999px; padding: 0.32rem 0.9rem; font-size: 0.67rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #2563EB; background: #EFF6FF; margin-bottom: 1.5rem; }
+  .pg-h1 { font-size: clamp(2.5rem, 5vw, 4rem); font-weight: 800; letter-spacing: -0.04em; line-height: 1.05; color: #0A0A14; margin-bottom: 3rem; }
+  .pg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.25rem; }
+  .pg-card { background: #fff; border: 1px solid #E5E7EB; border-radius: 20px; padding: 2rem; display: flex; flex-direction: column; text-decoration: none; transition: all 0.2s; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+  .pg-card:hover { border-color: rgba(37,99,235,0.3); box-shadow: 0 8px 32px rgba(37,99,235,0.12); transform: translateY(-2px); }
+  .pg-cat { font-size: 0.67rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #2563EB; }
+  .pg-card-title { font-size: 1.2rem; font-weight: 700; letter-spacing: -0.02em; color: #0A0A14; margin-top: 2.5rem; margin-bottom: 0.5rem; line-height: 1.3; }
+  .pg-card-date { font-size: 0.75rem; font-weight: 600; color: #9CA3AF; }
+  @media(max-width:640px){ .pg-main{padding:8rem 1.5rem 4rem;} }
+`;
 
+const posts = [
+  { title: "How AI is Reshaping Customer Service in 2026", date: "April 18, 2026", category: "Trends", slug: "ai-reshaping-customer-service" },
+  { title: "The Hidden Cost of Missed Leads (And How to Fix It)", date: "March 24, 2026", category: "Business", slug: "hidden-cost-missed-leads" },
+  { title: "Introducing Redber: Your 24/7 Virtual Receptionist", date: "February 10, 2026", category: "Product Update", slug: "introducing-redber" },
+];
+
+export default function BlogPage() {
   return (
-    <div className="min-h-screen bg-[#0d0d0d] text-[#f0f0f0] font-sans pb-20">
-      <div className="max-w-5xl mx-auto px-6 pt-20">
-        <Link href="/" className="inline-flex items-center gap-2 text-sm text-[rgba(255,255,255,0.5)] hover:text-white transition-colors mb-12">
-          <ArrowLeft size={16} /> Back to home
-        </Link>
-        
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-          <div className="text-[0.65rem] font-bold uppercase tracking-[0.1em] text-[#C6F432] bg-[rgba(198,244,50,0.12)] px-3 py-1.5 rounded-full inline-flex mb-6">
-            BLOG & INSIGHTS
-          </div>
-          <h1 className="text-4xl md:text-6xl font-black tracking-tight mb-12">
-            The latest from <span className="text-white">Redber.</span>
-          </h1>
+    <div className="pg-wrap">
+      <style>{STYLES}</style>
+
+      <nav className="pg-nav">
+        <div className="pg-nav-inner">
+          <Link href="/" className="pg-back">
+            <ArrowLeft size={16} /> Back to Home
+          </Link>
+          <img src="/logo/Redber Logo Black.svg" alt="Redber" style={{ width: 96, height: "auto" }}
+            onError={e => { (e.target as HTMLImageElement).src = "/logo/Redber Logo white.svg"; (e.target as HTMLImageElement).style.filter = "invert(1)"; }} />
+        </div>
+      </nav>
+
+      <main className="pg-main">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55 }}>
+          <div className="pg-chip">Blog &amp; Insights</div>
+          <h1 className="pg-h1">The latest from Redber.</h1>
         </motion.div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="pg-grid">
           {posts.map((post, i) => (
-            <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: i * 0.1 }}>
-              <Link href={`/blog/${post.slug}`} className="group block h-full p-8 rounded-3xl bg-[#141414] border border-[rgba(255,255,255,0.06)] hover:border-[rgba(198,244,50,0.3)] transition-all cursor-pointer">
-                <div className="flex justify-between items-start mb-16">
-                  <span className="text-xs font-bold uppercase tracking-wider text-[#C6F432]">{post.category}</span>
-                  <ArrowUpRight size={20} className="text-[rgba(255,255,255,0.3)] group-hover:text-white transition-colors" />
+            <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: i * 0.08 }}>
+              <Link href={`/blog/${post.slug}`} className="pg-card">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span className="pg-cat">{post.category}</span>
+                  <ArrowUpRight size={17} color="#9CA3AF" />
                 </div>
-                <div>
-                  <h3 className="text-2xl font-bold text-white mb-3 leading-tight">{post.title}</h3>
-                  <p className="text-[0.85rem] font-semibold text-[rgba(255,255,255,0.4)]">{post.date}</p>
-                </div>
+                <div className="pg-card-title">{post.title}</div>
+                <div className="pg-card-date">{post.date}</div>
               </Link>
             </motion.div>
           ))}
         </div>
-      </div>
+      </main>
     </div>
   );
 }

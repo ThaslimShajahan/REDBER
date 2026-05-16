@@ -1,21 +1,18 @@
 "use client";
 
 import { motion, AnimatePresence, useScroll, useSpring } from "framer-motion";
-import Image from "next/image";
-import dynamic from "next/dynamic";
 import Link from "next/link";
-
-const Hero3DModel = dynamic(() => import("@/components/Hero3DModel"), { ssr: false });
-import { ArrowRight, ChevronDown, CheckCircle, ArrowUpRight, MessageCircle, Bot, Menu, X, ChevronUp, Facebook } from "lucide-react";
-import { useState, useEffect } from "react";
+import { ArrowRight, ChevronDown, CheckCircle, ArrowUpRight, Bot, Menu, X, ChevronUp, Facebook, Send, Zap, Globe, Calendar, Shield, Link2, Sparkles } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
 import { API_BASE } from "../lib/api";
-import RedberMascot from "@/components/RedberMascot";
+import { type Region, DEFAULT_PRICING, COUNTRY_TO_REGION, formatPrice } from "../lib/pricing";
 
-const fadeUp = (delay = 0) => ({
-  initial: { opacity: 0, y: 32 },
+const ease = [0.22, 0.61, 0.36, 1] as const;
+const reveal = (delay = 0) => ({
+  initial: { opacity: 0, y: 24 },
   whileInView: { opacity: 1, y: 0 },
-  viewport: { once: true, margin: "-60px" },
-  transition: { duration: 0.6, delay, ease: "easeOut" } as const,
+  viewport: { once: true, margin: "-50px" },
+  transition: { duration: 0.65, delay, ease },
 });
 
 const faqs = [
@@ -25,632 +22,551 @@ const faqs = [
   { q: "What languages does it support?", a: "English, Arabic, Spanish, French, and more. Redber automatically detects the customer's language." }
 ];
 
+const TICKER = ["0.25s Response","24 / 7 Active","50+ Languages","Auto-Booking","Smart Lead Capture","Voice & Chat AI","WhatsApp Ready","Zero-Code Setup","Instant Deploy","Unlimited Scale"];
+
 export default function Home() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [bots, setBots] = useState<any[]>([]);
   const [loadingBots, setLoadingBots] = useState(true);
   const [isYearly, setIsYearly] = useState(false);
+  const [region, setRegion] = useState<Region>("INR");
+  const [pricing, setPricing] = useState(DEFAULT_PRICING);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [preloaderDone, setPreloaderDone] = useState(false);
   const { scrollYProgress } = useScroll();
   const scaleX = useSpring(scrollYProgress, { stiffness: 300, damping: 30 });
 
-  useEffect(() => {
-    const t = setTimeout(() => setPreloaderDone(true), 2800);
-    return () => clearTimeout(t);
-  }, []);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<{ sender: string; text: string }[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatSessionId = useRef(`landing-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages, chatLoading]);
 
-  useEffect(() => {
-    const onScroll = () => setShowScrollTop(window.scrollY > 600);
-    window.addEventListener("scroll", onScroll);
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  useEffect(() => {
-    fetch(`${API_BASE}/api/bots/public/list`)
-      .then(res => res.json())
-      .then(data => {
-        const list = Array.isArray(data) ? data : (Array.isArray(data?.bots) ? data.bots : []);
-        setBots(list);
-        setLoadingBots(false);
-      })
-      .catch(() => { setBots([]); setLoadingBots(false); });
-  }, []);
-
-  const faqJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "FAQPage",
-    "mainEntity": faqs.map(f => ({
-      "@type": "Question",
-      "name": f.q,
-      "acceptedAnswer": { "@type": "Answer", "text": f.a }
-    }))
+  const sendChat = async () => {
+    if (!chatInput.trim() || chatLoading) return;
+    const txt = chatInput.trim(); setChatInput("");
+    setChatMessages(p => [...p, { sender: "user", text: txt }]);
+    setChatLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/bots/chat`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: txt, bot_id: "redber-assistant-001", session_id: chatSessionId.current, history: chatMessages.map(m => ({ sender: m.sender, text: m.text })) }),
+      });
+      const d = await res.json();
+      setChatMessages(p => [...p, { sender: "bot", text: d.reply ?? "Let me think... 🤔" }]);
+    } catch {
+      setChatMessages(p => [...p, { sender: "bot", text: "Connection issue — please try again!" }]);
+    } finally { setChatLoading(false); }
   };
 
-  const softwareJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    "name": "Redber",
-    "applicationCategory": "BusinessApplication",
-    "operatingSystem": "Web",
-    "description": "AI-powered receptionist platform that handles reservations, captures leads, and engages customers 24/7 via chat and voice.",
-    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD", "availability": "https://schema.org/InStock" },
-    "aggregateRating": { "@type": "AggregateRating", "ratingValue": "4.9", "ratingCount": "120" }
-  };
+  useEffect(() => { const t = setTimeout(() => setPreloaderDone(true), 2000); return () => clearTimeout(t); }, []);
+  useEffect(() => {
+    const fn = () => setShowScrollTop(window.scrollY > 600);
+    window.addEventListener("scroll", fn); return () => window.removeEventListener("scroll", fn);
+  }, []);
+  useEffect(() => {
+    fetch("https://ipapi.co/json/").then(r => r.json()).then(d => setRegion(COUNTRY_TO_REGION[d.country_code] ?? "USD")).catch(() => setRegion("USD"));
+    fetch(`${API_BASE}/api/pricing`).then(r => r.json()).then(d => { if (d?.INR) setPricing(d); }).catch(() => {});
+  }, []);
+  useEffect(() => {
+    fetch(`${API_BASE}/api/bots/public/list`).then(r => r.json()).then(data => {
+      setBots(Array.isArray(data) ? data : (Array.isArray(data?.bots) ? data.bots : [])); setLoadingBots(false);
+    }).catch(() => { setBots([]); setLoadingBots(false); });
+  }, []);
 
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareJsonLd) }} />
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,300;1,400&display=swap');
+
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         html { scroll-behavior: smooth; }
-        body { font-family: 'Inter', sans-serif; background: #0d0d0d; color: #f0f0f0; overflow-x: hidden; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background: #ffffff; color: #0A0A14; overflow-x: hidden; }
 
-        .section { padding: 8rem 2rem; }
-        .inner { max-width: 1280px; width: 100%; margin: 0 auto; }
+        :root {
+          --accent:        #2563EB;
+          --accent-2:      #0EA5E9;
+          --gradient:      linear-gradient(135deg, #2563EB 0%, #0EA5E9 100%);
+          --gradient-soft: linear-gradient(135deg, rgba(37,99,235,0.09) 0%, rgba(14,165,233,0.09) 100%);
+          --accent-light:  #EFF6FF;
+          --accent-border: rgba(37,99,235,0.22);
 
-        .gf-tag { font-size: 0.65rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: #C6F432; background: rgba(198,244,50,0.12); padding: 0.35rem 0.8rem; border-radius: 999px; display: inline-flex; margin-bottom: 1.5rem; }
+          --bg:            #FFFFFF;
+          --bg-alt:        #F7F8FF;
+          --bg-dark:       #0A0A14;
 
-        /* Nav */
-        .gf-nav { position: fixed; top: 1.5rem; left: 50%; transform: translateX(-50%); width: calc(100% - 2rem); max-width: 1200px; z-index: 100; background: rgba(13,13,13,0.85); backdrop-filter: blur(20px); border-radius: 999px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 10px 40px rgba(0,0,0,0.4); padding: 0.5rem 1.5rem; }
-        .gf-nav-inner { width: 100%; display: flex; align-items: center; justify-content: space-between; height: 64px; }
-        .gf-nav-links { display: flex; gap: 3rem; list-style: none; }
-        .gf-nav-links a { color: rgba(255,255,255,0.55); font-size: 0.95rem; font-weight: 600; text-decoration: none; transition: color .2s; }
-        .gf-nav-links a:hover { color: #fff; }
-        .gf-btn-pill { border-radius: 999px; font-weight: 800; font-size: 0.95rem; padding: 0.75rem 1.75rem; cursor: pointer; text-decoration: none; transition: all .2s; display: inline-flex; align-items: center; gap: 0.4rem; border: none; }
-        .gf-btn-amber { background: #C6F432; color: #0d0d0d; }
-        .gf-btn-amber:hover { background: #aad424; }
-        .gf-btn-dark { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.12); }
-        .gf-btn-dark:hover { background: rgba(255,255,255,0.18); }
-        .nav-logo { height: auto; width: 150px; }
+          --text:          #0A0A14;
+          --text-sec:      #4B5563;
+          --text-muted:    #9CA3AF;
 
-        /* Hero */
-        .hero { position: relative; padding: 180px 2rem 6rem; background: #0d0d0d; text-align: center; overflow: hidden; }
-        .hero-glow-tl { position: absolute; top: -15%; left: -10%; width: 700px; height: 700px; background: radial-gradient(circle, rgba(100,220,255,0.12) 0%, transparent 65%); border-radius: 50%; pointer-events: none; z-index: 0; }
-        .hero-glow-tr { position: absolute; top: -5%; right: -8%; width: 600px; height: 600px; background: radial-gradient(circle, rgba(180,100,255,0.1) 0%, transparent 65%); border-radius: 50%; pointer-events: none; z-index: 0; }
-        .hero-glow-b { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 900px; height: 400px; background: radial-gradient(ellipse, rgba(198,244,50,0.08) 0%, transparent 65%); border-radius: 50%; pointer-events: none; z-index: 0; }
-        h1.hero-h1 { position: relative; z-index: 2; font-size: clamp(3.2rem, 7vw, 6.5rem); font-weight: 900; line-height: 1.15; letter-spacing: -0.04em; margin-bottom: 3rem; color: #fff; }
-        .hero-h1-top { display: flex; align-items: center; justify-content: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.25em; }
-        @keyframes shimmer-sweep {
-          0%   { background-position: -100% center; }
-          100% { background-position: 200% center; }
+          --border:        #E5E7EB;
+          --card-shadow:   0 1px 4px rgba(0,0,0,0.05), 0 6px 20px rgba(37,99,235,0.07);
+          --card-shadow-h: 0 4px 12px rgba(0,0,0,0.06), 0 12px 36px rgba(37,99,235,0.13);
         }
-        .metallic-text { display: block; background: linear-gradient(90deg, #fff 0%, rgba(255,255,255,0.75) 20%, #C6F432 38%, #64dcff 50%, #C6F432 62%, rgba(255,255,255,0.75) 80%, #fff 100%); background-size: 300% auto; -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; animation: shimmer-sweep 6s linear infinite; }
-        .hero-shimmer { display: inline; background: linear-gradient(90deg, #fff 0%, rgba(255,255,255,0.75) 20%, #C6F432 38%, #64dcff 50%, #C6F432 62%, rgba(255,255,255,0.75) 80%, #fff 100%); background-size: 300% auto; -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; animation: shimmer-sweep 6s linear infinite; }
 
-        /* Hero 3-column grid */
-        .hero-grid { display: grid; grid-template-columns: 1fr 480px 1fr; gap: 2rem; align-items: center; max-width: 1280px; margin: 0 auto; }
-        .hero-left-col { display: flex; flex-direction: column; gap: 1.5rem; align-items: flex-start; }
-        .hero-right-col { display: flex; flex-direction: column; gap: 1.5rem; align-items: flex-end; }
-        .hero-mascot-col { display: flex; justify-content: center; align-items: flex-end; }
-        .hero-stat-card { background: rgba(255,255,255,0.04); border-radius: 20px; padding: 1.5rem 2rem; box-shadow: 0 10px 40px rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.07); text-align: left; width: 100%; backdrop-filter: blur(8px); }
-        .hero-stat-card .stat-num { font-size: 3rem; font-weight: 900; line-height: 1; color: #fff; }
-        .hero-stat-card .stat-num span { color: #C6F432; }
-        .hero-stat-card .stat-label { font-size: 0.8rem; font-weight: 600; color: rgba(255,255,255,0.4); margin-top: 0.4rem; line-height: 1.4; }
-        .hero-pill-card { background: rgba(255,255,255,0.05); border-radius: 999px; padding: 0.75rem 1.25rem; border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; gap: 0.75rem; width: fit-content; backdrop-filter: blur(8px); }
-        .hero-cta-block { text-align: left; }
+        .w-container { max-width: 1240px; margin: 0 auto; padding: 0 2.5rem; }
+        .w-sec { padding: 8rem 2.5rem; }
 
-        .logo-band { padding: 3rem 2rem; border-top: 1px solid rgba(255,255,255,0.05); }
-        .logo-band-title { font-size: 0.75rem; font-weight: 700; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 1.5rem; }
-        .logo-band-inner { display: flex; justify-content: center; align-items: center; gap: clamp(2rem, 6vw, 5rem); flex-wrap: wrap; opacity: 0.2; filter: grayscale(100%) invert(1); }
-        .logo-band-inner img { height: 28px; width: auto; }
+        .w-grad-text { background: var(--gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
 
-        /* Results */
-        .results-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4rem; align-items: center; }
-        .results-img { border-radius: 1.5rem; overflow: hidden; height: 420px; position: relative; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
-        .results-h2 { font-size: clamp(2.5rem, 5vw, 3.2rem); font-weight: 900; line-height: 1.1; letter-spacing: -0.02em; margin-bottom: 1.5rem; color: #fff; }
-        .results-portraits { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
-        .results-portraits img { width: 44px; height: 44px; border-radius: 0.5rem; object-fit: cover; }
-        
-        /* Features Grid */
-        .features-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 1.25rem; }
-        .feat-card { border-radius: 1.75rem; overflow: hidden; position: relative; padding: 2.5rem; background: #141414; box-shadow: 0 4px 24px rgba(0,0,0,0.3); display: flex; flex-direction: column; min-height: 220px; border: 1px solid rgba(255,255,255,0.06); transition: transform 0.3s, box-shadow 0.3s, border-color 0.3s; }
-        .feat-card:hover { transform: translateY(-4px); box-shadow: 0 16px 48px rgba(198,244,50,0.08); border-color: rgba(198,244,50,0.2); }
-        .feat-icon { width: 52px; height: 52px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; margin-bottom: 1.5rem; flex-shrink: 0; }
-        .feat-title { font-size: 1.3rem; font-weight: 800; line-height: 1.25; margin-bottom: 0.6rem; letter-spacing: -0.01em; color: #fff; }
-        .feat-desc { font-size: 0.875rem; color: rgba(255,255,255,0.45); line-height: 1.6; }
-        .feat-badge { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.65rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; padding: 0.3rem 0.8rem; border-radius: 999px; margin-bottom: 1rem; background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); }
-        
-        /* Full Width CTA */
-        .cta-fullwidth { background: #111; padding: 7rem 2rem; text-align: left; position: relative; overflow: hidden; border-top: 1px solid rgba(255,255,255,0.06); border-bottom: 1px solid rgba(255,255,255,0.06); }
-        .cta-fullwidth-inner { max-width: 1280px; margin: 0 auto; display: grid; grid-template-columns: 1fr auto; gap: 4rem; align-items: center; position: relative; z-index: 2; }
-        .cta-fullwidth-bg { position: absolute; inset: 0; background-image: radial-gradient(circle at 10% 50%, rgba(198,244,50,0.1) 0%, transparent 50%), radial-gradient(circle at 90% 20%, rgba(100,220,255,0.07) 0%, transparent 40%); }
-        @media(max-width: 768px) { .cta-fullwidth-inner { grid-template-columns: 1fr; } }
-        
-        /* Pricing */
-        .pricing-grid { display: grid; grid-template-columns: 1fr 1.15fr 1fr; gap: 1.5rem; margin-top: 3rem; align-items: stretch; }
-        .pc { border-radius: 2rem; padding: 2.5rem; display: flex; flex-direction: column; }
-        .pc-plain { background: #141414; border: 1px solid rgba(255,255,255,0.07); }
-        .pc-featured { background: linear-gradient(145deg, #1a1a1a, #0f1a0f); color: #fff; box-shadow: 0 30px 80px rgba(198,244,50,0.12); border: 1px solid rgba(198,244,50,0.25); }
-        .pc-outline { background: #141414; border: 1px solid rgba(255,255,255,0.07); }
-        .pc-badge { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.65rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; padding: 0.4rem 1rem; border-radius: 999px; margin-bottom: 1.5rem; width: fit-content; }
-        .pc-name { font-size: 1rem; font-weight: 700; color: rgba(255,255,255,0.35); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.08em; }
-        .pc-price { font-size: 3.5rem; font-weight: 900; line-height: 1; letter-spacing: -0.04em; color: #fff; }
-        .pc-price-sub { font-size: 0.85rem; font-weight: 600; color: rgba(255,255,255,0.35); margin-top: 0.5rem; }
-        .pc-divider { height: 1px; background: rgba(255,255,255,0.07); margin: 2rem 0; }
-        .pc-list { list-style: none; display: flex; flex-direction: column; gap: 0.9rem; flex-grow: 1; margin-bottom: 2.5rem; }
-        .pc-list li { font-size: 0.9rem; font-weight: 600; color: rgba(255,255,255,0.6); display: flex; align-items: center; gap: 0.75rem; }
-        .pc-check { width: 20px; height: 20px; border-radius: 50%; background: rgba(198,244,50,0.15); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        
-        /* Operations Matrix */
-        .ops-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 3rem; }
-        .ops-col { display: flex; flex-direction: column; gap: 1.5rem; }
-        .ops-card { border-radius: 1.2rem; overflow: hidden; position: relative; }
-        .ops-yellow { background: linear-gradient(135deg, #1a2a0a, #141414); padding: 3rem; display: flex; flex-direction: column; justify-content: center; border: 1px solid rgba(198,244,50,0.2); }
-        .ops-yellow h3 { font-size: 1.8rem; font-weight: 900; line-height: 1.1; margin-bottom: 1rem; color: #fff; }
-        .ops-yellow p { font-size: 0.9rem; color: rgba(255,255,255,0.5); margin-bottom: 2rem; line-height: 1.5; }
-        .ops-img { width: 100%; height: 100%; object-fit: cover; min-height: 250px; }
-        .ops-img-tall { height: 100%; min-height: 400px; }
-        
-        /* Bots Grid */
-        .bots-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 2rem; margin-top: 3rem; }
-        .bot-card { background: #141414; border-radius: 1.5rem; border: 1px solid rgba(255,255,255,0.05); padding: 1.5rem; display: flex; flex-direction: column; position: relative; overflow: hidden; filter: saturate(0.12) brightness(0.55); transition: filter 0.5s ease, transform 0.5s ease, box-shadow 0.5s ease, border-color 0.5s ease; box-shadow: 0 4px 24px rgba(0,0,0,0.5); }
-        .bot-card:hover { transform: translateY(-8px); filter: saturate(1) brightness(1); box-shadow: 0 0 0 1px var(--card-border, rgba(198,244,50,0.5)), 0 8px 32px var(--card-glow, rgba(198,244,50,0.3)), 0 20px 60px var(--card-glow, rgba(198,244,50,0.2)); border-color: var(--card-border, rgba(198,244,50,0.5)); }
+        .w-chip { display: inline-flex; align-items: center; gap: 0.5rem; border: 1px solid var(--accent-border); border-radius: 999px; padding: 0.32rem 0.9rem; font-size: 0.67rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); background: var(--accent-light); }
+        .w-chip-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
 
-        .chat-preview-box { background: #0d0d0d; border: 1px solid rgba(255,255,255,0.06); border-radius: 1rem; padding: 1.25rem 1rem; margin-bottom: 1.5rem; flex-grow: 1; display: flex; flex-direction: column; gap: 0.8rem; }
-        .chat-bubble { padding: 0.75rem 1rem; border-radius: 1rem; font-size: 0.85rem; line-height: 1.4; max-width: 85%; font-weight: 500; }
-        .chat-bubble.left { background: #1e1e1e; border: 1px solid rgba(255,255,255,0.07); color: rgba(255,255,255,0.8); border-bottom-left-radius: 0.25rem; align-self: flex-start; }
-        .chat-bubble.right { background: #C6F432; color: #0d0d0d; border-bottom-right-radius: 0.25rem; align-self: flex-end; font-weight: 700; }
+        .w-h1 { font-size: clamp(3rem, 6.5vw, 6.5rem); font-weight: 800; letter-spacing: -0.04em; line-height: 1.02; color: var(--text); }
+        .w-h2 { font-size: clamp(2rem, 4vw, 3.4rem); font-weight: 800; letter-spacing: -0.03em; line-height: 1.05; color: var(--text); }
+        .w-h3 { font-size: 1.1rem; font-weight: 700; letter-spacing: -0.02em; color: var(--text); }
+        .w-light { font-weight: 300; color: var(--text-muted); }
 
-        /* FAQ */
-        .faq-grid { display: grid; grid-template-columns: 1fr 1.5fr; gap: 4rem; align-items: start; }
-        .faq-left h2 { font-size: 3rem; font-weight: 900; line-height: 1.1; margin-bottom: 1.5rem; letter-spacing: -0.02em; color: #fff; }
-        .faq-item { background: #141414; border: 1px solid rgba(255,255,255,0.07); border-radius: 1rem; margin-bottom: 0.75rem; overflow: hidden; transition: border-color 0.2s; }
-        .faq-item:hover { border-color: rgba(198,244,50,0.2); }
-        .faq-btn { width: 100%; padding: 1.5rem; text-align: left; display: flex; justify-content: space-between; align-items: center; background: none; border: none; cursor: pointer; font-size: 1rem; font-weight: 700; color: #fff; }
-        .faq-btn svg { color: rgba(255,255,255,0.3); transition: transform 0.3s; }
-        .faq-btn.open svg { transform: rotate(180deg); color: #C6F432; }
-        .faq-content { padding: 0 1.5rem 1.5rem; font-size: 0.95rem; color: rgba(255,255,255,0.5); line-height: 1.6; }
-        
-        /* Footer */
-        .gf-footer { background: #0a0a0a; border-top: 1px solid rgba(255,255,255,0.06); padding: 0; margin-top: 0; }
-        .footer-top { padding: 6rem 2rem 4rem; position: relative; overflow: hidden; }
-        .footer-top::before { content: ''; position: absolute; bottom: -30%; left: -5%; width: 700px; height: 600px; background: radial-gradient(circle, rgba(198,244,50,0.05) 0%, transparent 60%); border-radius: 50%; }
-        .footer-top::after { content: ''; position: absolute; top: -20%; right: -5%; width: 500px; height: 500px; background: radial-gradient(circle, rgba(100,220,255,0.04) 0%, transparent 60%); border-radius: 50%; }
-        .footer-cta h2 { font-size: 3.5rem; font-weight: 900; line-height: 1.1; margin-bottom: 2rem; letter-spacing: -0.03em; color: #fff; }
-        .footer-links h4 { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 1.5rem; color: rgba(255,255,255,0.3); }
-        .footer-links ul { list-style: none; }
-        .footer-links li { margin-bottom: 0.9rem; }
-        .footer-links a { color: rgba(255,255,255,0.5); font-size: 0.9rem; text-decoration: none; font-weight: 500; transition: color 0.2s; }
-        .footer-links a:hover { color: #C6F432; }
-        .footer-bottom { border-top: 1px solid rgba(255,255,255,0.05); padding: 1.75rem 2rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
-        
-        .footer-grid-top { display: grid; grid-template-columns: 1fr 1fr; gap: 4rem; margin-bottom: 5rem; }
-        .footer-grid-links { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem; padding-top: 0.5rem; }
-        .footer-stats-row { display: flex; gap: 3rem; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 3rem; flex-wrap: wrap; }
+        .w-btn { display: inline-flex; align-items: center; gap: 0.5rem; border-radius: 10px; font-weight: 600; font-size: 0.875rem; padding: 0.78rem 1.6rem; cursor: pointer; text-decoration: none; transition: all .18s; border: none; font-family: 'Plus Jakarta Sans', sans-serif; white-space: nowrap; }
+        .w-btn-primary { background: #0A0A14; color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.18); }
+        .w-btn-primary:hover { background: #1a1a2e; box-shadow: 0 4px 18px rgba(0,0,0,0.28); transform: translateY(-1px); }
+        .w-btn-outline { background: var(--bg); color: var(--text); border: 1.5px solid var(--border); }
+        .w-btn-outline:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+        .w-btn-ghost-dark { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); }
+        .w-btn-ghost-dark:hover { background: rgba(255,255,255,0.18); border-color: rgba(255,255,255,0.4); }
+        .w-btn-white { background: #fff; color: var(--accent); border: 1.5px solid rgba(255,255,255,0.3); font-weight: 700; }
+        .w-btn-white:hover { background: #f0f0ff; }
 
-        @media(max-width: 1100px) {
-          .hero-grid { grid-template-columns: 1fr; text-align: center; }
-          .hero-left-col, .hero-right-col { align-items: center; flex-direction: row; flex-wrap: wrap; justify-content: center; }
-          .hero-stat-card { max-width: 300px; }
-          .hero-cta-block { text-align: center; }
-          .hero-mascot-col { order: -1; height: 350px; }
+        .w-nav { position: fixed; top: 1.2rem; left: 50%; transform: translateX(-50%); width: calc(100% - 3rem); max-width: 1160px; z-index: 1000; background: rgba(255,255,255,0.92); backdrop-filter: blur(20px) saturate(160%); border: 1px solid var(--border); border-radius: 14px; padding: 0 1.5rem; box-shadow: 0 4px 24px rgba(37,99,235,0.08); }
+        .w-nav-inner { display: flex; align-items: center; justify-content: space-between; height: 58px; }
+        .w-nav-links { display: flex; gap: 2.25rem; list-style: none; }
+        .w-nav-links a { color: var(--text-sec); font-size: 0.84rem; font-weight: 500; text-decoration: none; transition: color .2s; }
+        .w-nav-links a:hover { color: var(--accent); }
+
+        .w-hero { min-height: 100svh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6rem 2.5rem 5rem; text-align: center; position: relative; background: var(--bg); overflow: hidden; }
+        .w-hero-badge { display: inline-flex; align-items: center; gap: 0.5rem; border: 1px solid var(--accent-border); border-radius: 999px; padding: 0.38rem 1rem; margin-bottom: 2rem; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); background: var(--accent-light); }
+        .w-hero-sub { font-size: clamp(1rem, 1.4vw, 1.1rem); color: var(--text-sec); line-height: 1.75; max-width: 520px; margin: 1.75rem auto 0; font-weight: 400; }
+        .w-hero-ctas { display: flex; gap: 0.875rem; justify-content: center; margin-top: 2.5rem; flex-wrap: wrap; }
+        .w-hero-bar { display: flex; gap: 3rem; justify-content: center; flex-wrap: wrap; margin-top: 5rem; padding-top: 3rem; border-top: 1px solid var(--border); width: 100%; max-width: 560px; }
+        .w-stat-val { font-size: 2rem; font-weight: 800; letter-spacing: -0.04em; color: var(--accent); line-height: 1; }
+        .w-stat-key { font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin-top: 0.3rem; }
+        .w-hero-blob-1 { position: absolute; width: 700px; height: 700px; border-radius: 50%; background: radial-gradient(circle, rgba(37,99,235,0.12) 0%, transparent 70%); top: -200px; left: 50%; transform: translateX(-60%); pointer-events: none; }
+        .w-hero-blob-2 { position: absolute; width: 500px; height: 500px; border-radius: 50%; background: radial-gradient(circle, rgba(14,165,233,0.1) 0%, transparent 70%); bottom: -100px; right: -100px; pointer-events: none; }
+
+        .w-ticker { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); overflow: hidden; padding: 0.85rem 0; background: var(--bg-alt); position: relative; }
+        .w-ticker::before, .w-ticker::after { content: ''; position: absolute; top: 0; bottom: 0; width: 80px; z-index: 1; }
+        .w-ticker::before { left: 0; background: linear-gradient(to right, var(--bg-alt), transparent); }
+        .w-ticker::after { right: 0; background: linear-gradient(to left, var(--bg-alt), transparent); }
+        @keyframes w-marquee { to { transform: translateX(-50%); } }
+        .w-ticker-track { display: flex; width: max-content; animation: w-marquee 30s linear infinite; }
+        .w-ticker-track:hover { animation-play-state: paused; }
+        .w-ticker-item { display: flex; align-items: center; gap: 1.25rem; padding: 0 2rem; white-space: nowrap; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-sec); }
+        .w-ticker-sep { width: 3px; height: 3px; border-radius: 50%; background: var(--accent); opacity: 0.5; flex-shrink: 0; }
+
+        .w-card { background: var(--bg); border: 1px solid var(--border); border-radius: 18px; padding: 2rem; transition: border-color 0.2s, box-shadow 0.2s; box-shadow: var(--card-shadow); }
+        .w-card:hover { border-color: var(--accent-border); box-shadow: var(--card-shadow-h); }
+        .w-card-grad { background: var(--gradient); border-color: transparent; color: #fff; }
+        .w-card-grad:hover { box-shadow: 0 8px 40px rgba(37,99,235,0.35); }
+        .w-card-alt { background: var(--bg-alt); }
+        .w-icon-box { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: var(--accent); margin-bottom: 1.25rem; background: var(--accent-light); border: 1px solid var(--accent-border); }
+        .w-icon-box-light { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.2); color: #fff; }
+
+        .w-sec-hd { margin-bottom: 3.5rem; display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 1.5rem; }
+
+        .w-ind { display: grid; grid-template-columns: 2rem 1fr auto; gap: 2.5rem; align-items: center; padding: 1.6rem 0; border-bottom: 1px solid var(--border); cursor: default; transition: padding-left 0.2s; }
+        .w-ind:first-of-type { border-top: 1px solid var(--border); }
+        .w-ind:hover { padding-left: 0.6rem; }
+        .w-ind:hover .w-ind-name { color: var(--accent); }
+        .w-ind-n { font-size: 0.62rem; font-weight: 700; color: var(--text-muted); letter-spacing: 0.08em; }
+        .w-ind-name { font-size: clamp(1.2rem, 2vw, 1.75rem); font-weight: 700; letter-spacing: -0.025em; color: var(--text); transition: color 0.2s; }
+        .w-ind-stat { font-size: 0.7rem; font-weight: 600; color: var(--text-muted); text-align: right; }
+
+        .w-hiw-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 1.25rem; }
+        .w-hiw-n { font-size: 4rem; font-weight: 800; letter-spacing: -0.06em; background: var(--gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1; margin-bottom: 1.5rem; opacity: 0.35; }
+        .w-tag { display: inline-flex; background: var(--accent-light); border: 1px solid var(--accent-border); border-radius: 8px; padding: 0.2rem 0.6rem; font-size: 0.67rem; font-weight: 600; color: var(--accent); margin: 0.18rem; }
+
+        .w-feat { display: grid; grid-template-columns: repeat(12, 1fr); gap: 1.25rem; }
+
+        .w-pricing-grid { display: grid; grid-template-columns: 1fr 1.08fr 1fr; gap: 1.25rem; margin-top: 3.5rem; }
+        .w-pc { background: var(--bg); border: 1.5px solid var(--border); border-radius: 20px; padding: 2.25rem; display: flex; flex-direction: column; transition: all 0.2s; box-shadow: var(--card-shadow); }
+        .w-pc:hover { border-color: var(--accent-border); box-shadow: var(--card-shadow-h); }
+        .w-pc-grad { background: var(--gradient); border-color: transparent; box-shadow: 0 8px 40px rgba(37,99,235,0.35); }
+        .w-pc-grad:hover { box-shadow: 0 12px 56px rgba(37,99,235,0.45); transform: translateY(-3px); }
+        .w-pc-name { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.16em; color: var(--text-muted); margin-bottom: 0.75rem; }
+        .w-pc-name-light { color: rgba(255,255,255,0.55) !important; }
+        .w-pc-price { font-size: 2.8rem; font-weight: 800; letter-spacing: -0.04em; line-height: 1; color: var(--text); }
+        .w-pc-price-light { color: #fff !important; }
+        .w-pc-sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.4rem; }
+        .w-pc-sub-light { color: rgba(255,255,255,0.45) !important; }
+        .w-pc-div { height: 1px; background: var(--border); margin: 1.75rem 0; }
+        .w-pc-div-light { background: rgba(255,255,255,0.2) !important; }
+        .w-pc-list { list-style: none; display: flex; flex-direction: column; gap: 0.85rem; flex-grow: 1; margin-bottom: 2rem; }
+        .w-pc-list li { display: flex; align-items: center; gap: 0.75rem; font-size: 0.875rem; color: var(--text-sec); }
+        .w-pc-list-light li { color: rgba(255,255,255,0.75) !important; }
+        .w-pc-badge { display: inline-flex; align-items: center; gap: 0.4rem; background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.25); border-radius: 999px; padding: 0.28rem 0.85rem; font-size: 0.58rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.9); margin-bottom: 1.5rem; width: fit-content; }
+
+        .w-cta-dark { background: var(--bg-dark); padding: 7rem 2.5rem; position: relative; overflow: hidden; }
+        .w-cta-dark::before { content: ''; position: absolute; width: 800px; height: 800px; border-radius: 50%; background: radial-gradient(circle, rgba(37,99,235,0.18) 0%, transparent 65%); top: 50%; left: 30%; transform: translate(-50%, -50%); pointer-events: none; }
+        .w-cta-dark::after { content: ''; position: absolute; width: 500px; height: 500px; border-radius: 50%; background: radial-gradient(circle, rgba(14,165,233,0.12) 0%, transparent 65%); top: 20%; right: 5%; pointer-events: none; }
+        .w-cta-dark-inner { max-width: 1240px; margin: 0 auto; display: grid; grid-template-columns: 1fr auto; gap: 4rem; align-items: center; position: relative; z-index: 1; }
+
+        .w-ops-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+        .w-ops-img { width: 100%; height: 280px; object-fit: cover; border-radius: 14px; display: block; filter: grayscale(20%); transition: filter 0.4s, transform 0.4s; }
+        .w-ops-img-wrap { overflow: hidden; border-radius: 14px; }
+        .w-ops-img-wrap:hover .w-ops-img { filter: grayscale(0%); transform: scale(1.02); }
+        .w-ops-card { background: var(--bg-alt); border: 1px solid var(--border); border-radius: 18px; padding: 2.5rem; display: flex; flex-direction: column; justify-content: center; gap: 1rem; box-shadow: var(--card-shadow); }
+        .w-ops-col { display: flex; flex-direction: column; gap: 1.25rem; }
+
+        .w-bots-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.25rem; margin-top: 3.5rem; }
+        .w-bot-card { background: var(--bg); border: 1px solid var(--border); border-radius: 18px; padding: 1.75rem; display: flex; flex-direction: column; transition: all 0.2s; box-shadow: var(--card-shadow); }
+        .w-bot-card:hover { border-color: var(--accent-border); box-shadow: var(--card-shadow-h); transform: translateY(-2px); }
+        .w-bubble { padding: 0.65rem 1rem; border-radius: 14px; font-size: 0.82rem; line-height: 1.45; max-width: 88%; font-weight: 500; }
+        .w-bubble-bot { background: var(--bg-alt); border: 1px solid var(--border); color: var(--text-sec); border-bottom-left-radius: 4px; align-self: flex-start; }
+        .w-bubble-user { background: var(--gradient); color: #fff; border-bottom-right-radius: 4px; align-self: flex-end; font-weight: 600; }
+        .w-chat-preview { background: var(--bg-alt); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; margin-bottom: 1.25rem; flex-grow: 1; display: flex; flex-direction: column; gap: 0.65rem; }
+
+        .w-faq-wrap { max-width: 720px; margin: 0 auto; }
+        .w-faq-row { border-bottom: 1px solid var(--border); }
+        .w-faq-row:first-child { border-top: 1px solid var(--border); }
+        .w-faq-btn { width: 100%; padding: 1.4rem 0; text-align: left; display: flex; justify-content: space-between; align-items: center; background: none; border: none; cursor: pointer; font-size: 0.94rem; font-weight: 600; color: var(--text); font-family: 'Plus Jakarta Sans', sans-serif; }
+        .w-faq-btn:hover { color: var(--accent); }
+        .w-faq-btn svg { color: var(--text-muted); flex-shrink: 0; margin-left: 1rem; transition: transform 0.3s; }
+        .w-faq-btn.open svg { transform: rotate(180deg); color: var(--accent); }
+        .w-faq-body { padding: 0 0 1.4rem; font-size: 0.875rem; color: var(--text-sec); line-height: 1.75; }
+
+        .w-fcw-trigger { position: fixed; bottom: 2rem; right: 2rem; z-index: 8000; width: 62px; height: 62px; border-radius: 50%; background: radial-gradient(circle at 38% 38%, rgba(139,92,246,0.95) 0%, rgba(37,99,235,0.9) 42%, rgba(14,165,233,0.75) 75%, rgba(8,10,24,0.95) 100%); box-shadow: 0 0 0 10px rgba(37,99,235,0.12), 0 0 36px rgba(37,99,235,0.45), 0 8px 28px rgba(0,0,0,0.35); cursor: pointer; border: none; display: flex; align-items: center; justify-content: center; color: #fff; transition: all 0.25s; animation: w-orb-float 3.5s ease-in-out infinite; }
+        .w-fcw-trigger:hover { box-shadow: 0 0 0 14px rgba(37,99,235,0.18), 0 0 52px rgba(37,99,235,0.6), 0 10px 36px rgba(0,0,0,0.4); transform: translateY(-3px) scale(1.06); animation-play-state: paused; }
+        @keyframes w-orb-float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+        .w-fcw-panel { position: fixed; bottom: 5.5rem; right: 2rem; z-index: 8001; width: 360px; height: 520px; background: #fff; border: 1px solid var(--border); border-radius: 24px; overflow: hidden; box-shadow: 0 24px 64px rgba(37,99,235,0.16), 0 4px 12px rgba(0,0,0,0.08); display: flex; flex-direction: column; }
+        .w-fcw-header { background: #fff; padding: 0.9rem 1.1rem; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
+        .w-fcw-empty { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; padding: 2rem; }
+        .w-fcw-empty-title { font-size: 1.1rem; font-weight: 700; color: var(--text); letter-spacing: -0.02em; }
+        .w-fcw-messages { flex-grow: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.65rem; scroll-behavior: smooth; background: #fff; }
+        .w-fcw-messages::-webkit-scrollbar { width: 4px; }
+        .w-fcw-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+        .w-fcw-msg { max-width: 82%; font-size: 0.83rem; line-height: 1.5; padding: 0.65rem 0.9rem; border-radius: 16px; font-weight: 500; }
+        .w-fcw-msg-bot { background: var(--bg-alt); border: 1px solid var(--border); color: var(--text); border-bottom-left-radius: 4px; align-self: flex-start; }
+        .w-fcw-msg-user { background: #0A0A14; color: #fff; border-bottom-right-radius: 4px; align-self: flex-end; }
+        .w-fcw-typing { display: flex; gap: 4px; align-items: center; padding: 0.3rem 0; }
+        .w-fcw-typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); animation: w-bounce 1.2s infinite; }
+        .w-fcw-typing span:nth-child(2) { animation-delay: 0.2s; }
+        .w-fcw-typing span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes w-bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-6px)} }
+        .w-fcw-input-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1rem; border-top: 1px solid var(--border); background: #fff; }
+        .w-fcw-input { flex-grow: 1; background: transparent; border: none; padding: 0.55rem 0.25rem; font-size: 0.84rem; color: var(--text); outline: none; font-family: 'Plus Jakarta Sans', sans-serif; }
+        .w-fcw-input::placeholder { color: var(--text-muted); }
+        .w-fcw-send { width: 36px; height: 36px; border-radius: 50%; background: #0A0A14; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #fff; flex-shrink: 0; transition: all 0.2s; }
+        .w-fcw-send:hover { background: #1a1a2e; transform: scale(1.07); }
+        .w-fcw-send:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+        .w-toggle { display: inline-flex; background: var(--bg-alt); border: 1px solid var(--border); border-radius: 12px; padding: 0.22rem; position: relative; }
+        .w-toggle-pill { position: absolute; height: calc(100% - 0.44rem); width: calc(50% - 0.22rem); background: #fff; border: 1px solid var(--accent-border); border-radius: 10px; top: 0.22rem; transition: left 0.28s; box-shadow: 0 1px 4px rgba(37,99,235,0.12); }
+        .w-toggle-btn { width: 120px; padding: 0.58rem 0; z-index: 1; border: none; background: none; font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 600; font-size: 0.83rem; cursor: pointer; transition: color 0.25s; position: relative; }
+
+        .w-footer { background: var(--bg-dark); border-top: 1px solid rgba(255,255,255,0.05); position: relative; overflow: hidden; }
+        .w-footer::before { content: ''; position: absolute; width: 700px; height: 700px; border-radius: 50%; background: radial-gradient(circle, rgba(37,99,235,0.12) 0%, transparent 65%); top: -200px; left: -150px; pointer-events: none; }
+        .w-footer-top { padding: 6rem 2.5rem 4rem; position: relative; z-index: 1; }
+        .w-footer-h { font-size: clamp(2.5rem, 6vw, 5.5rem); font-weight: 800; letter-spacing: -0.04em; line-height: 1.0; color: #fff; margin: 1rem 0 2rem; }
+        .w-footer-muted { -webkit-text-fill-color: transparent; background: linear-gradient(135deg, rgba(37,99,235,0.7), rgba(14,165,233,0.6)); -webkit-background-clip: text; background-clip: text; }
+        .w-footer-grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 4rem; margin-bottom: 4rem; }
+        .w-footer-links-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem; }
+        .w-footer-col h5 { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.18em; color: rgba(255,255,255,0.2); margin-bottom: 1.25rem; }
+        .w-footer-col ul { list-style: none; }
+        .w-footer-col li { margin-bottom: 0.75rem; }
+        .w-footer-col a { color: rgba(255,255,255,0.4); font-size: 0.84rem; text-decoration: none; transition: color 0.2s; }
+        .w-footer-col a:hover { color: #fff; }
+        .w-footer-stats { display: flex; gap: 3rem; border-top: 1px solid rgba(255,255,255,0.07); padding-top: 2.5rem; flex-wrap: wrap; align-items: center; }
+        .w-footer-stat-n { font-size: 1.6rem; font-weight: 800; color: #fff; letter-spacing: -0.04em; }
+        .w-footer-stat-l { font-size: 0.58rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: rgba(255,255,255,0.2); margin-top: 0.2rem; }
+        .w-footer-bottom { border-top: 1px solid rgba(255,255,255,0.07); padding: 1.5rem 2.5rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; position: relative; z-index: 1; }
+
+        @media (max-width: 1100px) {
+          .w-feat > * { grid-column: span 6 !important; }
+          .w-pricing-grid, .w-ops-grid, .w-hiw-grid { grid-template-columns: 1fr !important; }
+          .w-cta-dark-inner { grid-template-columns: 1fr !important; }
+          .w-footer-grid { grid-template-columns: 1fr; gap: 2.5rem; }
+          .w-ind-stat { display: none; }
         }
-        @media(max-width: 900px) {
-          .features-grid { grid-template-columns: 1fr 1fr !important; }
-          .features-grid .feat-card { grid-column: span 1 !important; }
-          .pricing-grid { grid-template-columns: 1fr !important; max-width: 440px; margin-inline: auto; }
-          .ops-grid { grid-template-columns: 1fr !important; }
-          .results-grid { grid-template-columns: 1fr !important; }
-          .cta-fullwidth-inner { grid-template-columns: 1fr !important; text-align: center; }
-          .cta-fullwidth-inner > div:last-child { align-items: center !important; }
-        }
-        @media(max-width: 768px) {
-          .gf-nav-links, .gf-nav-desktop-btns { display: none !important; }
-          .gf-nav-hamburger { display: flex !important; }
-          h1.hero-h1 { font-size: 2.4rem !important; }
-          .hero-grid { gap: 1.5rem; }
-          .hero-stat-card { max-width: 100% !important; }
-          .features-grid { grid-template-columns: 1fr !important; }
-          .features-grid .feat-card { grid-column: span 1 !important; min-height: 180px; }
-          .results-grid, .ops-grid, .faq-grid { grid-template-columns: 1fr !important; }
-          .faq-grid { gap: 2rem; }
-          .pricing-grid { grid-template-columns: 1fr !important; max-width: 380px; margin-inline: auto; }
-          .section { padding: 4rem 1.25rem !important; }
-          .logo-band-inner { gap: 1.5rem !important; }
-          .cta-fullwidth { padding: 4rem 1.25rem !important; }
-          .cta-fullwidth-inner { grid-template-columns: 1fr !important; text-align: center; }
-          .cta-fullwidth-inner > div:last-child { align-items: center !important; }
-          .ops-grid .ops-col { display: flex; flex-direction: column; }
-          .hero { padding: 100px 1.5rem 4rem !important; }
-          .bots-grid { grid-template-columns: 1fr !important; }
-          .footer-cta h2 { font-size: 2.2rem !important; }
-          .footer-grid-top { grid-template-columns: 1fr !important; gap: 2.5rem; }
-          .footer-grid-links { grid-template-columns: 1fr 1fr !important; }
-          .gf-nav { top: 0.75rem !important; width: calc(100% - 1.5rem) !important; padding: 0.25rem 1rem !important; }
-          .gf-nav-inner { height: 44px !important; }
-          .nav-logo { width: 112px !important; }
+        @media (max-width: 768px) {
+          .w-nav-links, .w-nav-desktop-btns { display: none !important; }
+          .w-nav-hamburger { display: flex !important; }
+          .w-h1 { font-size: clamp(2.6rem, 12vw, 4.5rem) !important; }
+          .w-sec { padding: 5rem 1.5rem; }
+          .w-feat > * { grid-column: span 12 !important; }
+          .w-bots-grid { grid-template-columns: 1fr; }
+          .w-nav { top: 0.5rem; width: calc(100% - 1.5rem); padding: 0 1rem; }
+          .w-fcw-panel { width: calc(100vw - 2rem); right: 1rem; bottom: 5.5rem; }
+          .w-fcw-trigger { right: 1rem; bottom: 1rem; width: 54px; height: 54px; }
+          .w-footer-links-grid { grid-template-columns: 1fr 1fr; }
         }
       `}</style>
 
-      {/* REDBER PRELOADER */}
       <AnimatePresence>
         {!preloaderDone && (
-          <motion.div
-            initial={{ opacity: 1 }}
-            exit={{ opacity: 0, transition: { duration: 0.7, ease: "easeInOut" } }}
-            style={{ position: "fixed", inset: 0, background: "#000", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" }}
-          >
-            {/* Logo */}
-            <div style={{ position: "relative", zIndex: 2, marginBottom: "0.5rem" }}>
-              <img src="/logo/Redber Logo white.svg" alt="Redber" style={{ width: 140, height: "auto" }} />
-            </div>
-
-            {/* Glowing line progress bar */}
-            <div style={{ position: "relative", width: 220, height: 2, background: "rgba(255,255,255,0.1)", borderRadius: 1 }}>
-              <motion.div
-                initial={{ width: "0%" }}
-                animate={{ width: "100%" }}
-                transition={{ duration: 2.4, ease: "easeInOut" }}
-                style={{ position: "relative", height: "100%", background: "linear-gradient(90deg, rgba(198,244,50,0) 0%, rgba(198,244,50,1) 100%)", borderRadius: 1 }}
-              >
-                {/* Neon tip */ }
-                <div style={{ position: "absolute", top: "50%", right: 0, transform: "translateY(-50%)", width: 20, height: 2, background: "#fff", boxShadow: "0 0 10px 4px rgba(198, 244, 50, 0.9), 0 0 20px 8px rgba(198, 244, 50, 0.6)", borderRadius: "50%" }} />
-              </motion.div>
+          <motion.div initial={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0.5 } }}
+            style={{ position: "fixed", inset: 0, background: "#fff", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: "2rem" }}>
+            <motion.img src="/logo/Redber Logo Black.svg" alt="Redber" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} style={{ width: 110, height: "auto" }}
+              onError={e => { (e.target as HTMLImageElement).src = "/logo/Redber Logo white.svg"; (e.target as HTMLImageElement).style.filter = "invert(1)"; }} />
+            <div style={{ width: 160, height: 3, background: "var(--border)", borderRadius: 999, overflow: "hidden" }}>
+              <motion.div initial={{ width: "0%" }} animate={{ width: "100%" }} transition={{ duration: 1.7, ease: "easeInOut" }} style={{ height: "100%", background: "#0A0A14", borderRadius: 999 }} />
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* SCROLL PROGRESS BAR */}
-      <motion.div style={{ scaleX, transformOrigin: "left", position: "fixed", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(to right, #C6F432, #64dcff)", zIndex: 9999 }} />
+      <motion.div style={{ scaleX, transformOrigin: "left", position: "fixed", top: 0, left: 0, right: 0, height: 3, background: "#0A0A14", zIndex: 9999 }} />
 
-      {/* SCROLL TO TOP */}
       <AnimatePresence>
         {showScrollTop && (
-          <motion.button
-            initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }}
+          <motion.button initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }}
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-            style={{ position: "fixed", bottom: "2rem", right: "2rem", zIndex: 9000, width: 48, height: 48, borderRadius: "50%", background: "#111", color: "#fff", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 24px rgba(0,0,0,0.2)" }}
-          >
-            <ChevronUp size={22} />
+            style={{ position: "fixed", bottom: "2rem", left: "2rem", zIndex: 9000, width: 40, height: 40, borderRadius: 10, background: "#0A0A14", color: "#fff", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 16px rgba(0,0,0,0.2)" }}>
+            <ChevronUp size={17} />
           </motion.button>
         )}
       </AnimatePresence>
 
-      {/* NAV */}
-      <nav className="gf-nav">
-        <div className="gf-nav-inner">
+      <nav className="w-nav">
+        <div className="w-nav-inner">
           <Link href="/" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
-            <img src="/logo/Redber Logo white.svg" alt="Redber" className="nav-logo" />
+            <img src="/logo/Redber Logo Black.svg" alt="Redber" style={{ width: 108, height: "auto" }}
+              onError={e => { (e.target as HTMLImageElement).src = "/logo/Redber Logo white.svg"; (e.target as HTMLImageElement).style.filter = "invert(1)"; }} />
           </Link>
-          <ul className="gf-nav-links" style={{ display: "flex", gap: "2.5rem", listStyle: "none" }}>
-            <li><Link href="#how-it-works">How It Works</Link></li>
+          <ul className="w-nav-links">
+            <li><a href="#how-it-works">How It Works</a></li>
             <li><a href="#pricing">Pricing</a></li>
             <li><a href="#faq">FAQ</a></li>
             <li><a href="#demo">Live Demo</a></li>
             <li><a href="/contact">Contact</a></li>
           </ul>
-          <div className="gf-nav-desktop-btns" style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-            <Link href="/contact" className="gf-btn-pill gf-btn-amber">Book Demo</Link>
+          <div className="w-nav-desktop-btns" style={{ display: "flex", gap: "0.75rem" }}>
+            <Link href="/contact" className="w-btn w-btn-primary" style={{ padding: "0.6rem 1.3rem", fontSize: "0.82rem" }}>Book a Demo</Link>
           </div>
-          <button className="gf-nav-hamburger" style={{ display: "none", background: "none", border: "none", cursor: "pointer", color: "#fff", padding: "0.5rem" }} onClick={() => setIsMobileMenuOpen(true)}>
-            <Menu size={32} />
+          <button className="w-nav-hamburger" style={{ display: "none", background: "none", border: "none", cursor: "pointer", color: "var(--text)" }} onClick={() => setIsMobileMenuOpen(true)}>
+            <Menu size={24} />
           </button>
         </div>
       </nav>
 
       <AnimatePresence>
         {isMobileMenuOpen && (
-          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} style={{ position: "fixed", top: 0, left: 0, right: 0, background: "#0d0d0d", zIndex: 9999, padding: "1.5rem", borderBottom: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 10px 40px rgba(0,0,0,0.5)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
-              <Link href="/" onClick={() => setIsMobileMenuOpen(false)} style={{ display: "flex", alignItems: "center" }}>
-                <img src="/logo/Redber Logo white.svg" alt="Redber" style={{ height: 40, width: "auto" }} onError={(e) => { (e.target as HTMLImageElement).src = "/logo/Redber Logo Black.svg"; (e.target as HTMLImageElement).style.filter = "invert(1)"; }} />
-              </Link>
-              <button onClick={() => setIsMobileMenuOpen(false)} style={{ background: "rgba(255,255,255,0.1)", color: "#fff", border: "none", borderRadius: "50%", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><X size={24}/></button>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ position: "fixed", inset: 0, background: "#fff", zIndex: 9999, padding: "1.5rem", display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "3rem" }}>
+              <img src="/logo/Redber Logo Black.svg" alt="Redber" style={{ width: 100, height: "auto" }}
+                onError={e => { (e.target as HTMLImageElement).src = "/logo/Redber Logo white.svg"; (e.target as HTMLImageElement).style.filter = "invert(1)"; }} />
+              <button onClick={() => setIsMobileMenuOpen(false)} style={{ background: "var(--bg-alt)", border: "1px solid var(--border)", borderRadius: 10, width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                <X size={18} />
+              </button>
             </div>
-            <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "1.5rem", fontSize: "1.2rem", fontWeight: 700 }}>
-              <li><a href="#features" onClick={() => setIsMobileMenuOpen(false)} style={{ color: "#fff", textDecoration: "none" }}>Features</a></li>
-              <li><a href="#pricing" onClick={() => setIsMobileMenuOpen(false)} style={{ color: "#fff", textDecoration: "none" }}>Pricing</a></li>
-              <li><a href="#faq" onClick={() => setIsMobileMenuOpen(false)} style={{ color: "#fff", textDecoration: "none" }}>FAQ</a></li>
-              <li><a href="#demo" onClick={() => setIsMobileMenuOpen(false)} style={{ color: "#fff", textDecoration: "none" }}>Live Demo</a></li>
-              <li><a href="/contact" onClick={() => setIsMobileMenuOpen(false)} style={{ color: "#fff", textDecoration: "none" }}>Contact</a></li>
-              <li><Link href="/contact" className="gf-btn-pill gf-btn-amber" style={{ width: "100%", justifyContent: "center", marginTop: "1rem", padding: "1rem", color: "#0d0d0d" }} onClick={() => setIsMobileMenuOpen(false)}>Book Demo</Link></li>
+            <ul style={{ listStyle: "none", flexGrow: 1 }}>
+              {[["#how-it-works","How It Works"],["#pricing","Pricing"],["#faq","FAQ"],["#demo","Live Demo"],["/contact","Contact"]].map(([href, label]) => (
+                <li key={href}>
+                  <a href={href} onClick={() => setIsMobileMenuOpen(false)}
+                    style={{ display: "block", padding: "1rem 0", borderBottom: "1px solid var(--border)", color: "var(--text)", textDecoration: "none", fontSize: "1.5rem", fontWeight: 700, letterSpacing: "-0.02em" }}>
+                    {label}
+                  </a>
+                </li>
+              ))}
             </ul>
+            <Link href="/contact" className="w-btn w-btn-primary" style={{ display: "flex", justifyContent: "center", marginTop: "2rem", padding: "1rem" }} onClick={() => setIsMobileMenuOpen(false)}>
+              Book a Demo <ArrowRight size={16} />
+            </Link>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* HERO */}
-      <section className="hero">
-        {/* Ambient glow orbs */}
-        <div className="hero-glow-tl" />
-        <div className="hero-glow-tr" />
-        <div className="hero-glow-b" />
-
-        <h1 className="hero-h1">
-          <span className="hero-h1-top">
-            <span className="hero-shimmer">AI Agents</span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 3, margin: "0 0.5rem" }}>
-              {[12, 20, 32, 40, 32, 20, 12].map((h, i) => (
-                <span key={i} style={{ display: "block", width: 6, height: h/2, borderRadius: 3, background: "#C6F432", opacity: 0.5 + i * 0.07 }} />
-              ))}
-            </span>
-            <span className="hero-shimmer">That</span>
-          </span>
-          <span className="metallic-text">Run Operations</span>
-        </h1>
-
-        <div className="hero-grid">
-          {/* LEFT COLUMN */}
-          <motion.div className="hero-left-col" initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.4 }}>
-            <div className="hero-stat-card">
-              <div className="stat-num"><span>24</span>/7</div>
-              <div className="stat-label">Always on — never<br/>misses a customer</div>
-            </div>
-            <div className="hero-cta-block">
-              <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "1rem", lineHeight: 1.7, marginBottom: "1.5rem", fontWeight: 500, maxWidth: 320 }}>
-                Redber automates complex operations through AI agents that think, learn, and act seamlessly.
-              </p>
-              <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
-                <Link href="/contact" className="gf-btn-pill gf-btn-dark">Try for Free</Link>
-                <div style={{ width: 48, height: 48, borderRadius: "50%", background: "#C6F432", color: "#0d0d0d", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, boxShadow: "0 4px 15px rgba(198,244,50,0.25)" }}>
-                  <ArrowUpRight size={22} />
-                </div>
-              </div>
-            </div>
-          </motion.div>
-
-          {/* CENTER / MASCOT */}
-          <motion.div className="hero-mascot-col" initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.2, type: "spring", stiffness: 80 }}>
-            <div style={{ position: "relative", width: "100%", maxWidth: 480, height: 520, zIndex: 10 }}>
-              <Hero3DModel />
-            </div>
-          </motion.div>
-
-          {/* RIGHT COLUMN */}
-          <motion.div className="hero-right-col" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.5 }}>
-            <div className="hero-pill-card">
-              <span style={{ color: "#C6F432", fontSize: "1.3rem" }}>⚡</span>
-              <div>
-                <div style={{ fontWeight: 900, fontSize: "1.1rem", lineHeight: 1, color: "#fff" }}>0.25s</div>
-                <div style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.4)", fontWeight: 600 }}>First reply, every time</div>
-              </div>
-              <div style={{ display: "flex", marginLeft: "0.25rem" }}>
-                <img src="https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=40&h=40&fit=crop&crop=face" alt="" style={{width: 32, height: 32, borderRadius: "50%", border: "2px solid #1e1e1e", marginLeft: -10, zIndex: 2}} />
-                <img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=40&h=40&fit=crop&crop=face" alt="" style={{width: 32, height: 32, borderRadius: "50%", border: "2px solid #1e1e1e", marginLeft: -10, zIndex: 1}} />
-              </div>
-            </div>
-
-            <div className="hero-stat-card" style={{ textAlign: "right", alignSelf: "flex-end" }}>
-              <div className="stat-num">0.25<span>s</span></div>
-              <div className="stat-label">Real-Time Intelligent<br/>Responses</div>
-            </div>
-
-            <div className="hero-stat-card" style={{ background: "rgba(198,244,50,0.08)", border: "1px solid rgba(198,244,50,0.2)", padding: "1.25rem 1.5rem", display: "flex", alignItems: "center", gap: "1rem" }}>
-              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(198,244,50,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.3rem" }}>⚡</div>
-              <div>
-                <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#fff" }}>Auto-Booking</div>
-                <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.4)", fontWeight: 600 }}>Captures appointments in chat</div>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-
-        {/* Logo Band Hidden */}
-      </section>
-
-      {/* ── INDUSTRIES ── */}
-      <section className="section">
-        <div className="inner">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            
-            {/* Card 1: Restaurant */}
-            <motion.div style={{ background: "#0d0505", borderRadius: "1.5rem", padding: "2.5rem", border: "1px solid rgba(255,100,100,0.15)", boxShadow: "0 20px 40px rgba(0,0,0,0.5), inset 0 0 60px rgba(255,50,50,0.02)" }} {...fadeUp(0)}>
-              <div style={{ display: "flex", gap: "1rem", alignItems: "center", marginBottom: "1.5rem" }}>
-                <div style={{ fontSize: "2rem" }}>🍽️</div>
-                <div>
-                  <h3 style={{ color: "#fff", fontWeight: 800, fontSize: "1.3rem", letterSpacing: "-0.02em" }}>Restaurant & Café</h3>
-                  <div style={{ color: "#ff4d4d", fontSize: "0.75rem", fontWeight: 700 }}>68% of diners look for info online after hours</div>
-                </div>
-              </div>
-              <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", fontWeight: 800, letterSpacing: "0.08em", marginBottom: "1.2rem" }}>REDBER ANSWERS THESE INSTANTLY:</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                {["What are your opening hours?", "Do you have vegan options?", "Can I make a reservation?", "Do you offer delivery?"].map(q => (
-                  <div key={q} style={{ background: "rgba(255,255,255,0.03)", padding: "0.8rem 1.25rem", borderRadius: "999px", color: "rgba(255,255,255,0.6)", fontSize: "0.85rem", border: "1px solid rgba(255,255,255,0.04)", display: "flex", gap: "0.75rem", alignItems: "center" }}>
-                    <span style={{ width: 12, height: 12, borderRadius: "50%", border: "2px solid #ff4d4d", opacity: 0.6 }} /> {q}
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-
-            {/* Card 2: Auto */}
-            <motion.div style={{ background: "#050b12", borderRadius: "1.5rem", padding: "2.5rem", border: "1px solid rgba(100,150,255,0.15)", boxShadow: "0 20px 40px rgba(0,0,0,0.5), inset 0 0 60px rgba(50,100,255,0.02)" }} {...fadeUp(0.1)}>
-              <div style={{ display: "flex", gap: "1rem", alignItems: "center", marginBottom: "1.5rem" }}>
-                <div style={{ fontSize: "2rem" }}>🚗</div>
-                <div>
-                  <h3 style={{ color: "#fff", fontWeight: 800, fontSize: "1.3rem", letterSpacing: "-0.02em" }}>Car Dealership</h3>
-                  <div style={{ color: "#4d94ff", fontSize: "0.75rem", fontWeight: 700 }}>72% of car buyers research online before calling</div>
-                </div>
-              </div>
-              <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", fontWeight: 800, letterSpacing: "0.08em", marginBottom: "1.2rem" }}>REDBER ANSWERS THESE INSTANTLY:</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                {["Is the 2024 SUV still available?", "Can I book a test drive?", "What finance options do you offer?", "What's your trade-in process?"].map(q => (
-                  <div key={q} style={{ background: "rgba(255,255,255,0.03)", padding: "0.8rem 1.25rem", borderRadius: "999px", color: "rgba(255,255,255,0.6)", fontSize: "0.85rem", border: "1px solid rgba(255,255,255,0.04)", display: "flex", gap: "0.75rem", alignItems: "center" }}>
-                    <span style={{ width: 12, height: 12, borderRadius: "50%", border: "2px solid #4d94ff", opacity: 0.6 }} /> {q}
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-
-            {/* Card 3: Medical */}
-            <motion.div style={{ background: "#05100a", borderRadius: "1.5rem", padding: "2.5rem", border: "1px solid rgba(50,200,150,0.15)", boxShadow: "0 20px 40px rgba(0,0,0,0.5), inset 0 0 60px rgba(50,200,150,0.02)" }} {...fadeUp(0.2)}>
-              <div style={{ display: "flex", gap: "1rem", alignItems: "center", marginBottom: "1.5rem" }}>
-                <div style={{ fontSize: "2rem" }}>🏥</div>
-                <div>
-                  <h3 style={{ color: "#fff", fontWeight: 800, fontSize: "1.3rem", letterSpacing: "-0.02em" }}>Medical Clinic & Spa</h3>
-                  <div style={{ color: "#32c896", fontSize: "0.75rem", fontWeight: 700 }}>44% of patients book outside of business hours</div>
-                </div>
-              </div>
-              <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", fontWeight: 800, letterSpacing: "0.08em", marginBottom: "1.2rem" }}>REDBER ANSWERS THESE INSTANTLY:</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                {["Are you accepting new patients?", "How do I book an appointment?", "What insurance do you accept?", "What are your consultation fees?"].map(q => (
-                  <div key={q} style={{ background: "rgba(255,255,255,0.03)", padding: "0.8rem 1.25rem", borderRadius: "999px", color: "rgba(255,255,255,0.6)", fontSize: "0.85rem", border: "1px solid rgba(255,255,255,0.04)", display: "flex", gap: "0.75rem", alignItems: "center" }}>
-                    <span style={{ width: 12, height: 12, borderRadius: "50%", border: "2px solid #32c896", opacity: 0.6 }} /> {q}
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-
-            {/* Card 4: Salon */}
-            <motion.div style={{ background: "#100510", borderRadius: "1.5rem", padding: "2.5rem", border: "1px solid rgba(200,50,200,0.15)", boxShadow: "0 20px 40px rgba(0,0,0,0.5), inset 0 0 60px rgba(200,50,200,0.02)" }} {...fadeUp(0.3)}>
-              <div style={{ display: "flex", gap: "1rem", alignItems: "center", marginBottom: "1.5rem" }}>
-                <div style={{ fontSize: "2rem" }}>💆‍♀️</div>
-                <div>
-                  <h3 style={{ color: "#fff", fontWeight: 800, fontSize: "1.3rem", letterSpacing: "-0.02em" }}>Salon, Spa & Beauty</h3>
-                  <div style={{ color: "#c832c8", fontSize: "0.75rem", fontWeight: 700 }}>Missed bookings cost salons $8K+ per year</div>
-                </div>
-              </div>
-              <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.35)", fontWeight: 800, letterSpacing: "0.08em", marginBottom: "1.2rem" }}>REDBER ANSWERS THESE INSTANTLY:</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                {["What services do you offer?", "How much is a haircut?", "Can I book online?", "Do you offer gift vouchers?"].map(q => (
-                  <div key={q} style={{ background: "rgba(255,255,255,0.03)", padding: "0.8rem 1.25rem", borderRadius: "999px", color: "rgba(255,255,255,0.6)", fontSize: "0.85rem", border: "1px solid rgba(255,255,255,0.04)", display: "flex", gap: "0.75rem", alignItems: "center" }}>
-                    <span style={{ width: 12, height: 12, borderRadius: "50%", border: "2px solid #c832c8", opacity: 0.6 }} /> {q}
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-
+      <section className="w-hero">
+        <div className="w-hero-blob-1" />
+        <div className="w-hero-blob-2" />
+        <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3, duration: 0.55, ease }} style={{ position: "relative", zIndex: 1 }}>
+          <div className="w-hero-badge">
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--gradient)", flexShrink: 0 }} />
+            AI Receptionist Platform — Now Live
           </div>
+        </motion.div>
+        <motion.h1 className="w-h1" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.42, duration: 0.7, ease }} style={{ position: "relative", zIndex: 1 }}>
+          Your Business{" "}<span className="w-grad-text">Never</span><br />Misses a Customer
+        </motion.h1>
+        <motion.p className="w-hero-sub" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6, duration: 0.65, ease }} style={{ position: "relative", zIndex: 1 }}>
+          Redber deploys AI agents that handle calls, chats, and bookings so your business stays responsive — 24 hours a day, every single day.
+        </motion.p>
+        <motion.div className="w-hero-ctas" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.78, duration: 0.6, ease }} style={{ position: "relative", zIndex: 1 }}>
+          <Link href="/contact" className="w-btn w-btn-primary" style={{ padding: "0.9rem 2rem", fontSize: "0.95rem" }}>Start Free <ArrowRight size={16} /></Link>
+          <a href="#demo" className="w-btn w-btn-outline" style={{ padding: "0.9rem 2rem", fontSize: "0.95rem" }}>See Live Demo</a>
+        </motion.div>
+        <motion.div className="w-hero-bar" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.0, duration: 0.6 }} style={{ position: "relative", zIndex: 1 }}>
+          {[{ v: "0.25s", k: "Response Time" }, { v: "24/7", k: "Always Online" }, { v: "50+", k: "Languages" }].map(({ v, k }) => (
+            <div key={k} style={{ textAlign: "center" }}><div className="w-stat-val">{v}</div><div className="w-stat-key">{k}</div></div>
+          ))}
+        </motion.div>
+      </section>
+
+      <AnimatePresence>
+        {chatOpen && (
+          <motion.div className="w-fcw-panel" initial={{ opacity: 0, y: 14, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.96 }} transition={{ duration: 0.22, ease }}>
+            <div className="w-fcw-header">
+              <div style={{ display: "flex", alignItems: "center", gap: "0.65rem" }}>
+                <div style={{ width: 32, height: 32, borderRadius: "50%", background: "radial-gradient(circle at 38% 38%, rgba(139,92,246,0.95) 0%, rgba(37,99,235,0.9) 42%, rgba(14,165,233,0.75) 100%)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Sparkles size={13} color="#fff" />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--text)", letterSpacing: "-0.01em" }}>Redber AI</div>
+                  <div style={{ fontSize: "0.62rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "0.3rem", fontWeight: 600 }}>
+                    <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#22c55e", display: "block" }} /> Online
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setChatOpen(false)} style={{ background: "var(--bg-alt)", border: "1px solid var(--border)", borderRadius: "50%", width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "var(--text-muted)" }}><X size={13} /></button>
+            </div>
+            {chatMessages.length === 0 && !chatLoading ? (
+              <div className="w-fcw-empty">
+                <div style={{ width: 48, height: 48, borderRadius: "50%", background: "radial-gradient(circle at 38% 38%, rgba(139,92,246,0.9) 0%, rgba(37,99,235,0.85) 42%, rgba(14,165,233,0.7) 100%)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "0.75rem" }}>
+                  <Sparkles size={20} color="#fff" />
+                </div>
+                <div className="w-fcw-empty-title">How can I help you?</div>
+                <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", textAlign: "center", maxWidth: 220, lineHeight: 1.6 }}>Ask me anything about pricing, bookings, or how Redber works.</div>
+              </div>
+            ) : (
+              <div className="w-fcw-messages">
+                {chatMessages.map((m, i) => (
+                  <div key={i} className={`w-fcw-msg ${m.sender === "bot" ? "w-fcw-msg-bot" : "w-fcw-msg-user"}`}>{m.text}</div>
+                ))}
+                {chatLoading && <div className="w-fcw-msg w-fcw-msg-bot"><div className="w-fcw-typing"><span /><span /><span /></div></div>}
+                <div ref={chatEndRef} />
+              </div>
+            )}
+            <div className="w-fcw-input-row">
+              <input className="w-fcw-input" value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === "Enter" && sendChat()} placeholder="Type to Ask…" />
+              <button className="w-fcw-send" onClick={sendChat} disabled={chatLoading || !chatInput.trim()}><Send size={14} /></button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <motion.button className="w-fcw-trigger" onClick={() => setChatOpen(o => !o)} initial={{ opacity: 0, scale: 0.7 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 1.3, duration: 0.5, ease }}>
+        {chatOpen ? <X size={22} /> : <Sparkles size={22} />}
+      </motion.button>
+
+      <div className="w-ticker">
+        <div className="w-ticker-track">
+          {[...TICKER, ...TICKER].map((item, i) => (
+            <div key={i} className="w-ticker-item"><span className="w-ticker-sep" />{item}</div>
+          ))}
+        </div>
+      </div>
+
+      <section className="w-sec">
+        <div className="w-container">
+          <div className="w-sec-hd">
+            <div>
+              <span className="w-chip"><span className="w-chip-dot" />Industries</span>
+              <h2 className="w-h2" style={{ marginTop: "1rem" }}>Built for every<br /><span className="w-light">customer-facing business.</span></h2>
+            </div>
+            <p style={{ color: "var(--text-sec)", fontSize: "0.875rem", maxWidth: 260, lineHeight: 1.75 }}>Any business that talks to customers can deploy Redber in under 15 minutes — zero code.</p>
+          </div>
+          {[
+            { n: "01", name: "Restaurants & Cafés", stat: "68% research online after hours" },
+            { n: "02", name: "Medical Clinics & Spas", stat: "44% book outside business hours" },
+            { n: "03", name: "Car Dealerships", stat: "72% research before calling" },
+            { n: "04", name: "Salons & Beauty Studios", stat: "$8K+ missed bookings per year" },
+            { n: "05", name: "Hotels & Real Estate", stat: "Instant multi-channel support" },
+          ].map((item, i) => (
+            <motion.div key={i} className="w-ind" {...reveal(i * 0.05)}>
+              <span className="w-ind-n">{item.n}</span>
+              <span className="w-ind-name">{item.name}</span>
+              <span className="w-ind-stat">{item.stat}</span>
+            </motion.div>
+          ))}
         </div>
       </section>
 
-      {/* HOW IT WORKS */}
-      <section id="how-it-works" style={{ background: "#090909", padding: "7rem 0", borderTop: "1px solid rgba(255,255,255,0.05)", borderBottom: "1px solid rgba(255,255,255,0.05)", overflow: "hidden", position: "relative" }}>
-        <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: "800px", height: "800px", background: "radial-gradient(circle, rgba(198,244,50,0.04) 0%, transparent 70%)", pointerEvents: "none" }} />
-        <div className="inner" style={{ maxWidth: 1100 }}>
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-100px" }}
-            transition={{ duration: 0.7 }}
-            style={{ textAlign: "center", marginBottom: "5rem" }}
-          >
-            <div className="gf-tag" style={{ marginBottom: "1.5rem" }}>HOW IT WORKS</div>
-            <h2 style={{ fontSize: "clamp(2.2rem, 5vw, 3.5rem)", fontWeight: 900, letterSpacing: "-0.03em", color: "#fff", marginBottom: "1.25rem", lineHeight: 1.1 }}>
-              From zero to AI workforce<br />
-              <span style={{ color: "#C6F432" }}>in three steps.</span>
-            </h2>
-            <p style={{ color: "rgba(255,255,255,0.45)", fontSize: "1.1rem", maxWidth: 520, margin: "0 auto", lineHeight: 1.7 }}>
-              Deploying Redber is seamless — no engineering team required.
-            </p>
-          </motion.div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
+      <section id="how-it-works" style={{ padding: "8rem 2.5rem", background: "var(--bg-alt)", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
+        <div className="w-container">
+          <div className="w-sec-hd" style={{ marginBottom: "2.5rem" }}>
+            <div>
+              <span className="w-chip"><span className="w-chip-dot" />How It Works</span>
+              <h2 className="w-h2" style={{ marginTop: "1rem" }}>From zero to AI<br /><span className="w-light">in three steps.</span></h2>
+            </div>
+          </div>
+          <div className="w-hiw-grid">
             {[
-              { step: "01", title: "Connect Your Channels", desc: "Link your business phone number, website widget, WhatsApp, and social media accounts to the central Redber brain in one unified dashboard.", tags: ["📱 Phone", "🌐 Web Chat", "💬 WhatsApp", "📊 CRM"], color: "#C6F432", dir: -1 },
-              { step: "02", title: "Train The Model", desc: "Upload your PDFs, paste website URLs, and define your brand guardrails. The AI instantly processes your entire business knowledge base.", tags: ["📄 PDFs", "🔗 Website URL", "🛡️ Guardrails", "🧠 Knowledge Base"], color: "#64dcff", dir: 1 },
-              { step: "03", title: "Deploy & Automate 24/7", desc: "Flip the switch. Your AI agents begin handling infinite concurrent calls, bookings, and chats from day one — completely on autopilot.", tags: ["⚡ 0.25s Response", "🔄 24/7 Active", "📅 Auto-Book", "♾️ Unlimited Scale"], color: "#ff7eb3", dir: -1 }
-            ].map((item, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, x: item.dir * 60 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true, margin: "-60px" }}
-                transition={{ duration: 0.7, delay: 0.05, ease: [0.25, 0.46, 0.45, 0.94] }}
-                style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "2rem", alignItems: "flex-start", background: "#111", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "2rem", padding: "2.5rem", position: "relative", overflow: "hidden" }}
-              >
-                <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", background: `radial-gradient(ellipse at ${item.dir === -1 ? "0%" : "100%"} 50%, ${item.color}08 0%, transparent 60%)`, pointerEvents: "none" }} />
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.75rem" }}>
-                  <div style={{ width: 70, height: 70, borderRadius: "50%", background: "#1a1a1a", border: `1.5px solid ${item.color}`, boxShadow: `0 0 24px ${item.color}30`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.3rem", fontWeight: 900, color: item.color, flexShrink: 0 }}>
-                    {item.step}
-                  </div>
-                  {i < 2 && <motion.div initial={{ scaleY: 0 }} whileInView={{ scaleY: 1 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.6 }} style={{ width: 2, height: 32, background: `linear-gradient(to bottom, ${item.color}50, transparent)`, borderRadius: 99, transformOrigin: "top" }} />}
-                </div>
-                <div style={{ position: "relative", zIndex: 1 }}>
-                  <h3 style={{ fontSize: "clamp(1.2rem, 2.5vw, 1.65rem)", fontWeight: 800, color: "#fff", marginBottom: "0.75rem", letterSpacing: "-0.02em" }}>{item.title}</h3>
-                  <p style={{ color: "rgba(255,255,255,0.5)", lineHeight: 1.7, fontSize: "1rem", marginBottom: "1.25rem", maxWidth: 580 }}>{item.desc}</p>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
-                    {item.tags.map(tag => (
-                      <span key={tag} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 999, padding: "0.3rem 0.85rem", fontSize: "0.8rem", fontWeight: 700, color: "rgba(255,255,255,0.5)" }}>{tag}</span>
-                    ))}
-                  </div>
-                </div>
+              { n: "01", title: "Connect Your Channels", desc: "Link your website, WhatsApp, phone, and social accounts to Redber's central AI brain in one unified dashboard.", tags: ["📱 Phone", "🌐 Web Chat", "💬 WhatsApp", "📊 CRM"], icon: <Link2 size={18} /> },
+              { n: "02", title: "Train the Model", desc: "Upload PDFs, paste website URLs, define brand guardrails. The AI processes your entire knowledge base instantly.", tags: ["📄 PDFs", "🔗 Website URL", "🛡️ Guardrails", "🧠 Knowledge Base"], icon: <Sparkles size={18} /> },
+              { n: "03", title: "Deploy & Automate 24/7", desc: "Flip the switch. Your AI agents handle infinite concurrent calls, bookings, and chats from day one.", tags: ["⚡ 0.25s Reply", "🔄 24/7 Active", "📅 Auto-Book", "♾️ Unlimited"], icon: <Zap size={18} /> },
+            ].map((s, i) => (
+              <motion.div key={i} className="w-card" {...reveal(i * 0.1)}>
+                <div className="w-hiw-n">{s.n}</div>
+                <div className="w-icon-box">{s.icon}</div>
+                <h3 className="w-h3" style={{ marginBottom: "0.65rem" }}>{s.title}</h3>
+                <p style={{ fontSize: "0.875rem", color: "var(--text-sec)", lineHeight: 1.7, marginBottom: "1.5rem" }}>{s.desc}</p>
+                <div style={{ display: "flex", flexWrap: "wrap", margin: "-0.18rem" }}>{s.tags.map(t => <span key={t} className="w-tag">{t}</span>)}</div>
               </motion.div>
             ))}
           </div>
         </div>
       </section>
 
-
-
-      {/* FEATURES GRID */}
-      <section id="features" className="section" style={{ paddingTop: 0 }}>
-        <div className="inner">
-          
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "3.5rem", flexWrap: "wrap", gap: "1.5rem" }}>
+      <section id="features" className="w-sec">
+        <div className="w-container">
+          <div className="w-sec-hd">
             <div>
-              <div className="gf-tag">FEATURES</div>
-              <h2 style={{ fontSize: "clamp(2rem, 4vw, 3rem)", fontWeight: 900, marginBottom: "0.75rem", letterSpacing: "-0.02em", color: "#fff" }}>Everything your business needs</h2>
-              <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "1.05rem" }}>Purpose-built tools for modern AI receptionists.</p>
+              <span className="w-chip"><span className="w-chip-dot" />Features</span>
+              <h2 className="w-h2" style={{ marginTop: "1rem" }}>Everything your<br /><span className="w-light">business needs.</span></h2>
             </div>
-            <Link href="/capabilities" style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)", padding: "0.8rem 1.5rem", borderRadius: "999px", color: "#fff", fontWeight: 700, fontSize: "0.95rem", textDecoration: "none", transition: "all 0.2s" }} onMouseOver={e=>{e.currentTarget.style.background="rgba(255,255,255,0.15)"; e.currentTarget.style.borderColor="rgba(255,255,255,0.2)"}} onMouseOut={e=>{e.currentTarget.style.background="rgba(255,255,255,0.08)"; e.currentTarget.style.borderColor="rgba(255,255,255,0.1)"}}>
-               Read All Capabilities <ArrowUpRight size={18} />
-            </Link>
+            <Link href="/capabilities" className="w-btn w-btn-outline" style={{ fontSize: "0.85rem" }}>All Capabilities <ArrowUpRight size={14} /></Link>
           </div>
-          
-          <div className="features-grid text-left">
-            {/* Row 1: Large card + 2 small */}
-            <motion.div className="feat-card" style={{ gridColumn: "span 5", background: "linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%)", color: "#fff", minHeight: 280 }} {...fadeUp(0)}>
-              <div className="feat-icon" style={{ background: "rgba(198,244,50,0.15)" }}>⚡</div>
-              <div className="feat-badge" style={{ background: "rgba(198,244,50,0.15)", color: "#C6F432" }}>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#C6F432", display: "block" }} /> Live
+          <div className="w-feat">
+            <motion.div className="w-card w-card-grad" style={{ gridColumn: "span 7", minHeight: 280, position: "relative", overflow: "hidden" }} {...reveal(0)}>
+              <div className="w-icon-box w-icon-box-light"><Zap size={18} /></div>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 999, padding: "0.22rem 0.7rem", width: "fit-content", marginBottom: "0.75rem" }}>
+                <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#4ade80", display: "block" }} />
+                <span style={{ fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.7)" }}>Live · Real-Time</span>
               </div>
               <div style={{ marginTop: "auto" }}>
-                <h3 className="feat-title" style={{ color: "#fff", fontSize: "1.8rem" }}>Instant AI Responses</h3>
-                <p className="feat-desc" style={{ color: "rgba(255,255,255,0.65)" }}>Respond in under 0.25 seconds across every channel — website, phone, and WhatsApp — 24 hours a day.</p>
+                <h3 style={{ fontWeight: 700, fontSize: "1.4rem", letterSpacing: "-0.02em", color: "#fff", marginBottom: "0.55rem" }}>Instant AI Responses</h3>
+                <p style={{ fontSize: "0.875rem", color: "rgba(255,255,255,0.65)", lineHeight: 1.65 }}>Replies in under 0.25s across every channel — website, phone, WhatsApp — 24 hours a day.</p>
               </div>
-              <div style={{ position: "absolute", top: "2rem", right: "2rem", opacity: 0.06, fontSize: "8rem", lineHeight: 1 }}>⚡</div>
+              <div style={{ position: "absolute", right: "1.5rem", bottom: "1rem", fontSize: "6rem", opacity: 0.08, lineHeight: 1 }}>⚡</div>
             </motion.div>
-
-            <motion.div className="feat-card" style={{ gridColumn: "span 4", background: "linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%)" }} {...fadeUp(0.1)}>
-              <div className="feat-icon" style={{ background: "rgba(198,244,50,0.15)" }}>📅</div>
-              <h3 className="feat-title">Automated Booking</h3>
-              <p className="feat-desc">Customers book appointments directly in chat. Syncs with Google Calendar instantly — zero back-and-forth.</p>
-              <div style={{ marginTop: "auto", paddingTop: "1.5rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                {["Mon 10am ✓", "Wed 2pm ✓", "Fri 4pm ✓"].map(s => (
-                  <span key={s} style={{ fontSize: "0.72rem", fontWeight: 700, background: "rgba(255,255,255,0.1)", padding: "0.3rem 0.8rem", borderRadius: "999px", color: "#eee" }}>{s}</span>
+            <motion.div className="w-card w-card-alt" style={{ gridColumn: "span 5" }} {...reveal(0.07)}>
+              <div className="w-icon-box"><Globe size={18} /></div>
+              <h3 className="w-h3" style={{ marginBottom: "0.6rem" }}>Smart Lead Capture</h3>
+              <p style={{ fontSize: "0.875rem", color: "var(--text-sec)", lineHeight: 1.65, marginBottom: "1.25rem" }}>Automatically collects names, numbers, and intent. Every lead flows into your dashboard instantly.</p>
+              <div style={{ marginTop: "auto" }}>
+                {["Name collected ✓", "Phone saved ✓", "Intent tagged ✓"].map(s => (
+                  <div key={s} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0", borderBottom: "1px solid var(--border)", fontSize: "0.78rem", color: "var(--text-sec)" }}>
+                    <CheckCircle size={12} color="var(--accent)" /> {s}
+                  </div>
                 ))}
               </div>
             </motion.div>
-
-            <motion.div className="feat-card" style={{ gridColumn: "span 3", background: "linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%)" }} {...fadeUp(0.15)}>
-              <div className="feat-icon" style={{ background: "rgba(198,244,50,0.15)" }}>🌐</div>
-              <h3 className="feat-title">50+ Languages</h3>
-              <p className="feat-desc">Auto-detects and replies in Arabic, Spanish, French, and more.</p>
-              <div style={{ marginTop: "auto", display: "flex", gap: "0.4rem", flexWrap: "wrap", paddingTop: "1rem" }}>
-                {["EN","AR","ES","FR","DE"].map(l => (
-                  <span key={l} style={{ fontSize: "0.68rem", fontWeight: 800, background: "rgba(198,244,50,0.15)", padding: "0.35rem 0.6rem", borderRadius: "6px", color: "#C6F432" }}>{l}</span>
+            <motion.div className="w-card" style={{ gridColumn: "span 4" }} {...reveal(0.1)}>
+              <div className="w-icon-box"><Globe size={18} /></div>
+              <h3 className="w-h3" style={{ marginBottom: "0.6rem" }}>50+ Languages</h3>
+              <p style={{ fontSize: "0.875rem", color: "var(--text-sec)", lineHeight: 1.65, marginBottom: "1.25rem" }}>Auto-detects and replies in Arabic, Spanish, French, and more.</p>
+              <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                {["EN","AR","ES","FR","DE","HI"].map(l => (
+                  <span key={l} style={{ fontSize: "0.65rem", fontWeight: 700, background: "var(--accent-light)", border: "1px solid var(--accent-border)", padding: "0.28rem 0.6rem", borderRadius: 8, color: "var(--accent)", letterSpacing: "0.06em" }}>{l}</span>
                 ))}
               </div>
             </motion.div>
-
-            {/* Row 2: 3 + wide */}
-            <motion.div className="feat-card" style={{ gridColumn: "span 4", background: "linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%)" }} {...fadeUp(0.2)}>
-              <div className="feat-icon" style={{ background: "rgba(198,244,50,0.15)" }}>🎯</div>
-              <h3 className="feat-title">Smart Lead Capture</h3>
-              <p className="feat-desc">Automatically collects names, numbers, and intent. Every lead flows straight into your dashboard — no missed opportunities.</p>
-            </motion.div>
-
-            <motion.div className="feat-card" style={{ gridColumn: "span 4", background: "linear-gradient(135deg, #0d0d0d 0%, #1a1a0f 100%)", color: "#fff", position: "relative", overflow: "hidden" }} {...fadeUp(0.25)}>
-              <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle at 70% 30%, rgba(198,244,50,0.15) 0%, transparent 60%)" }} />
-              <div className="feat-icon" style={{ background: "rgba(198,244,50,0.15)", position: "relative", zIndex: 2 }}>🛡️</div>
-              <div style={{ position: "relative", zIndex: 2, marginTop: "auto" }}>
-                <h3 className="feat-title" style={{ color: "#fff" }}>Custom Guardrails</h3>
-                <p className="feat-desc" style={{ color: "rgba(255,255,255,0.6)" }}>Stays strictly on-topic. Set rules, compliance limits, and persona — Redber never goes off-script.</p>
+            <motion.div className="w-card w-card-alt" style={{ gridColumn: "span 4" }} {...reveal(0.14)}>
+              <div className="w-icon-box"><Calendar size={18} /></div>
+              <h3 className="w-h3" style={{ marginBottom: "0.6rem" }}>Automated Booking</h3>
+              <p style={{ fontSize: "0.875rem", color: "var(--text-sec)", lineHeight: 1.65, marginBottom: "1.25rem" }}>Customers book directly in chat. Syncs with your calendar — zero back-and-forth.</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                {["Mon 10:00 AM · Confirmed", "Wed 2:00 PM · Confirmed", "Fri 4:00 PM · Pending"].map((s, i) => (
+                  <div key={s} style={{ fontSize: "0.72rem", fontWeight: 600, background: "#fff", border: `1px solid ${i < 2 ? "var(--accent-border)" : "var(--border)"}`, padding: "0.4rem 0.8rem", borderRadius: 8, color: i < 2 ? "var(--accent)" : "var(--text-muted)" }}>{s}</div>
+                ))}
               </div>
             </motion.div>
-
-            <motion.div className="feat-card" style={{ gridColumn: "span 4", background: "linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%)" }} {...fadeUp(0.3)}>
-              <div className="feat-icon" style={{ background: "rgba(198,244,50,0.15)" }}>🔗</div>
-              <h3 className="feat-title">Seamless Integrations</h3>
-              <p className="feat-desc">Connects with your Website, Phone, WhatsApp, and CRM platforms. Deploy everywhere in minutes.</p>
-              <div style={{ marginTop: "auto", paddingTop: "1rem", display: "flex", gap: "0.75rem", alignItems: "center" }}>
-                {["🌐 Web", "📱 Phone", "💬 WA", "📊 CRM"].map(i => (
-                  <span key={i} style={{ fontSize: "0.72rem", fontWeight: 700, background: "rgba(198,244,50,0.12)", padding: "0.35rem 0.75rem", borderRadius: "999px", color: "#C6F432" }}>{i}</span>
+            <motion.div className="w-card w-card-grad" style={{ gridColumn: "span 4" }} {...reveal(0.18)}>
+              <div className="w-icon-box w-icon-box-light"><Shield size={18} /></div>
+              <div style={{ marginTop: "auto" }}>
+                <h3 style={{ fontWeight: 700, fontSize: "1.1rem", letterSpacing: "-0.02em", color: "#fff", marginBottom: "0.55rem" }}>Custom Guardrails</h3>
+                <p style={{ fontSize: "0.875rem", color: "rgba(255,255,255,0.65)", lineHeight: 1.65 }}>Set rules, compliance limits, and persona — Redber stays strictly on-script, every time.</p>
+              </div>
+            </motion.div>
+            <motion.div className="w-card" style={{ gridColumn: "span 4" }} {...reveal(0.22)}>
+              <div className="w-icon-box"><Link2 size={18} /></div>
+              <h3 className="w-h3" style={{ marginBottom: "0.6rem" }}>Seamless Integrations</h3>
+              <p style={{ fontSize: "0.875rem", color: "var(--text-sec)", lineHeight: 1.65, marginBottom: "1.25rem" }}>Connects with your website, phone, WhatsApp, and CRM in minutes.</p>
+              <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                {["🌐 Web", "📱 Phone", "💬 WhatsApp", "📊 CRM"].map(t => (
+                  <span key={t} style={{ fontSize: "0.72rem", fontWeight: 600, background: "var(--accent-light)", border: "1px solid var(--accent-border)", padding: "0.3rem 0.75rem", borderRadius: 8, color: "var(--accent)" }}>{t}</span>
                 ))}
               </div>
             </motion.div>
@@ -658,170 +574,133 @@ export default function Home() {
         </div>
       </section>
 
-      {/* FULL WIDTH CTA */}
-      <div className="cta-fullwidth">
-        <div className="cta-fullwidth-bg" />
-        <div className="cta-fullwidth-inner">
-          <motion.div {...fadeUp(0)}>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", background: "rgba(198,244,50,0.15)", border: "1px solid rgba(198,244,50,0.3)", borderRadius: "999px", padding: "0.4rem 1rem", marginBottom: "2rem" }}>
-              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#C6F432", display: "block", boxShadow: "0 0 8px #C6F432" }} />
-              <span style={{ fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "#C6F432" }}>Now Live — AI Powered</span>
+      <div className="w-cta-dark">
+        <div className="w-cta-dark-inner">
+          <motion.div {...reveal(0)}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 999, padding: "0.3rem 0.9rem", marginBottom: "1.75rem" }}>
+              <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#4ade80", display: "block" }} />
+              <span style={{ fontSize: "0.62rem", fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)" }}>Now Live</span>
             </div>
-            <h2 style={{ fontSize: "clamp(2.8rem, 5vw, 4.5rem)", fontWeight: 900, lineHeight: 1.05, letterSpacing: "-0.03em", color: "#fff", maxWidth: 680 }}>
-              Ready to stop missing
-              <span style={{ color: "#C6F432" }}> customers?</span>
+            <h2 style={{ fontWeight: 800, fontSize: "clamp(2.5rem, 5.5vw, 5.5rem)", color: "#fff", letterSpacing: "-0.04em", lineHeight: 1.05 }}>
+              Ready to stop missing<br />
+              <span style={{ background: "var(--gradient)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>customers?</span>
             </h2>
-            <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "1.1rem", lineHeight: 1.7, marginTop: "1.5rem", maxWidth: 520, fontWeight: 500 }}>
-              Redber deploys in minutes. No code needed. Your AI receptionist starts handling calls, chats, and bookings from day one.
-            </p>
-          </motion.div>
-
-          <motion.div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", alignItems: "flex-end" }} initial={{ opacity: 0, x: 30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }}>
-            <div style={{ textAlign: "right", marginBottom: "1rem" }}>
-              {[
-                { num: "0.25s", label: "Avg Response Time" },
-                { num: "24/7", label: "Always Online" },
-                { num: "∞", label: "Concurrent Calls" },
-              ].map(({ num, label }) => (
-                <div key={num} style={{ marginBottom: "1.25rem" }}>
-                  <div style={{ fontSize: "2.2rem", fontWeight: 900, color: "#fff", lineHeight: 1 }}>{num}</div>
-                  <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.4)", fontWeight: 600, marginTop: "0.2rem" }}>{label}</div>
-                </div>
-              ))}
+            <p style={{ color: "rgba(255,255,255,0.45)", fontSize: "0.95rem", lineHeight: 1.75, marginTop: "1.5rem", maxWidth: 440 }}>Redber deploys in minutes. No code needed. Your AI receptionist starts handling calls, chats, and bookings from day one.</p>
+            <div style={{ display: "flex", gap: "0.875rem", marginTop: "2.5rem", flexWrap: "wrap", alignItems: "center" }}>
+              <Link href="/contact" className="w-btn w-btn-primary" style={{ padding: "0.9rem 2.2rem", fontSize: "0.95rem" }}>Start Free Trial <ArrowRight size={16} /></Link>
+              <Link href="/contact" className="w-btn w-btn-ghost-dark" style={{ padding: "0.9rem 2.2rem", fontSize: "0.95rem" }}>Book a Demo</Link>
             </div>
-            <Link href="/contact" className="gf-btn-pill gf-btn-amber" style={{ fontSize: "1.1rem", padding: "1.1rem 2.8rem", boxShadow: "0 8px 30px rgba(198,244,50,0.15)", whiteSpace: "nowrap" }}>
-              Start Free Trial <ArrowRight size={18} />
-            </Link>
-            <span style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.35)", fontWeight: 600 }}>No credit card required</span>
+            <span style={{ display: "block", fontSize: "0.72rem", color: "rgba(255,255,255,0.25)", fontWeight: 600, marginTop: "1rem" }}>No credit card required</span>
+          </motion.div>
+          <motion.div style={{ display: "flex", flexDirection: "column", gap: "2.5rem", alignItems: "flex-end" }} initial={{ opacity: 0, x: 20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.7 }}>
+            {[{ v: "0.25s", k: "Avg Response Time" }, { v: "24/7", k: "Always Online" }, { v: "∞", k: "Concurrent Calls" }].map(({ v, k }) => (
+              <div key={k} style={{ textAlign: "right" }}>
+                <div style={{ fontSize: "2.8rem", fontWeight: 800, letterSpacing: "-0.04em", background: "var(--gradient)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", lineHeight: 1 }}>{v}</div>
+                <div style={{ fontSize: "0.65rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(255,255,255,0.25)", marginTop: "0.25rem" }}>{k}</div>
+              </div>
+            ))}
           </motion.div>
         </div>
       </div>
 
-      {/* PRICING */}
-      <section id="pricing" className="section" style={{ background: "#0a0a0a" }}>
-        <div className="inner">
-          <div className="text-center" style={{ marginBottom: "3.5rem" }}>
-            <div className="gf-tag">PRICING</div>
-            <h2 style={{ fontSize: "clamp(2.5rem, 5vw, 3.5rem)", fontWeight: 900, marginBottom: "1rem", letterSpacing: "-0.03em" }}>Simple, transparent pricing</h2>
-            <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "1rem", maxWidth: 480, margin: "0 auto 2rem" }}>Start for free, scale as you grow. No hidden fees.</p>
-            
-            {/* Toggle */}
-            <div style={{ display: "inline-flex", background: "#141414", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "999px", padding: "0.3rem", alignItems: "center", position: "relative", boxShadow: "0 4px 12px rgba(0,0,0,0.5)" }}>
-              <div style={{ position: "absolute", left: isYearly ? "50%" : "0.3rem", width: "calc(50% - 0.3rem)", height: "calc(100% - 0.6rem)", background: "rgba(255,255,255,0.1)", borderRadius: "999px", transition: "left 0.3s cubic-bezier(0.4, 0, 0.2, 1)" }} />
-              <button onClick={() => setIsYearly(false)} style={{ width: 130, padding: "0.65rem 0", zIndex: 1, border: "none", background: "none", color: isYearly ? "rgba(255,255,255,0.5)" : "#fff", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer", transition: "color 0.3s" }}>Monthly</button>
-              <button onClick={() => setIsYearly(true)} style={{ width: 130, padding: "0.65rem 0", zIndex: 1, border: "none", background: "none", color: isYearly ? "#fff" : "rgba(255,255,255,0.5)", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer", transition: "color 0.3s", position: "relative" }}>
+      <section id="pricing" className="w-sec">
+        <div className="w-container">
+          <div style={{ textAlign: "center" }}>
+            <span className="w-chip" style={{ margin: "0 auto" }}><span className="w-chip-dot" />Pricing</span>
+            <h2 className="w-h2" style={{ marginTop: "1rem", marginBottom: "1rem" }}>Simple, <span className="w-grad-text">transparent</span> pricing</h2>
+            <p style={{ color: "var(--text-sec)", fontSize: "0.9rem", maxWidth: 340, margin: "0 auto 2.5rem" }}>Start free, scale as you grow. No hidden fees.</p>
+            <div className="w-toggle" style={{ margin: "0 auto" }}>
+              <div className="w-toggle-pill" style={{ left: isYearly ? "calc(50% + 0.22rem)" : "0.22rem" }} />
+              <button className="w-toggle-btn" onClick={() => setIsYearly(false)} style={{ color: !isYearly ? "var(--accent)" : "var(--text-muted)" }}>Monthly</button>
+              <button className="w-toggle-btn" onClick={() => setIsYearly(true)} style={{ color: isYearly ? "var(--accent)" : "var(--text-muted)", position: "relative" }}>
                 Yearly
-                {!isYearly && <span style={{ position: "absolute", top: -18, right: 4, background: "#C6F432", color: "#0d0d0d", fontSize: "0.6rem", fontWeight: 800, padding: "0.2rem 0.5rem", borderRadius: "999px", whiteSpace: "nowrap" }}>Save 15%</span>}
+                {!isYearly && <span style={{ position: "absolute", top: -15, right: 4, background: "var(--gradient)", color: "#fff", fontSize: "0.54rem", fontWeight: 700, padding: "0.15rem 0.45rem", borderRadius: 999, whiteSpace: "nowrap" }}>Save 15%</span>}
               </button>
             </div>
           </div>
-
-          <div className="pricing-grid">
-            {/* STARTER */}
-            <motion.div className="pc pc-plain" {...fadeUp(0)}>
-              {/* Spacer to match featured badge height */}
-              <div style={{ height: "2.1rem", marginBottom: "1.5rem" }} />
-              <div className="pc-name">Starter</div>
-              <div className="pc-price">{isYearly ? "₹55k" : "₹5,500"}</div>
-              <div className="pc-price-sub">per {isYearly ? "year" : "month"} · billed {isYearly ? "annually" : "monthly"}</div>
-              <div className="pc-divider" />
-              <ul className="pc-list">
+          <div className="w-pricing-grid">
+            <motion.div className="w-pc" {...reveal(0)}>
+              <div style={{ height: "1.5rem", marginBottom: "1.5rem" }} />
+              <div className="w-pc-name">Starter</div>
+              <div className="w-pc-price">{formatPrice(region, isYearly ? pricing[region].starter.yearly : pricing[region].starter.monthly)}</div>
+              <div className="w-pc-sub">per {isYearly ? "year" : "month"}</div>
+              <div className="w-pc-div" />
+              <ul className="w-pc-list">
                 {["Up to 1 website","Website chat widget","Basic knowledge base","Lead capture","CRM lead dashboard"].map(f => (
-                  <li key={f}>
-                    <span className="pc-check"><CheckCircle size={13} color="#C6F432" /></span>
-                    {f}
-                  </li>
+                  <li key={f}><CheckCircle size={14} color="var(--accent-2)" style={{ flexShrink: 0 }} />{f}</li>
                 ))}
               </ul>
-              <Link href="/contact" className="gf-btn-pill" style={{ background: "rgba(255,255,255,0.1)", color: "#fff", fontWeight: 700, justifyContent: "center", marginTop: "auto" }}>Get Started</Link>
+              <Link href="/contact" className="w-btn w-btn-outline" style={{ justifyContent: "center", marginTop: "auto" }}>Get Started</Link>
             </motion.div>
-
-            {/* GROWTH - Featured */}
-            <motion.div className="pc pc-featured" style={{ position: "relative", overflow: "hidden" }} {...fadeUp(0.1)}>
-              <div style={{ position: "absolute", top: 0, right: 0, width: 200, height: 200, background: "radial-gradient(circle at 100% 0%, rgba(198,244,50,0.15) 0%, transparent 60%)" }} />
-              <div className="pc-badge" style={{ background: "rgba(198,244,50,0.15)", color: "#C6F432" }}>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#C6F432", display: "block" }} />
-                Most Popular
-              </div>
-              <div className="pc-name" style={{ color: "rgba(255,255,255,0.5)" }}>Growth</div>
-              <div className="pc-price" style={{ color: "#fff" }}>{isYearly ? "₹1L" : "₹9,999"}</div>
-              <div className="pc-price-sub">per {isYearly ? "year" : "month"} · billed {isYearly ? "annually" : "monthly"}</div>
-              <div className="pc-divider" />
-              <ul className="pc-list">
+            <motion.div className="w-pc w-pc-grad" {...reveal(0.08)} style={{ position: "relative", overflow: "hidden" }}>
+              <div className="w-pc-badge"><span style={{ width: 4, height: 4, borderRadius: "50%", background: "rgba(255,255,255,0.8)", display: "block" }} /> Most Popular</div>
+              <div className="w-pc-name w-pc-name-light">Growth</div>
+              <div className="w-pc-price w-pc-price-light">{formatPrice(region, isYearly ? pricing[region].growth.yearly : pricing[region].growth.monthly)}</div>
+              <div className="w-pc-sub w-pc-sub-light">per {isYearly ? "year" : "month"}</div>
+              <div className="w-pc-div w-pc-div-light" />
+              <ul className="w-pc-list w-pc-list-light">
                 {["Up to 2 websites","PDF document training","Product catalog training","Conversation summaries","Analytics dashboard","Priority support"].map(f => (
-                  <li key={f}>
-                    <span className="pc-check"><CheckCircle size={13} color="#C6F432" /></span>
-                    {f}
-                  </li>
+                  <li key={f}><CheckCircle size={14} color="rgba(255,255,255,0.5)" style={{ flexShrink: 0 }} />{f}</li>
                 ))}
               </ul>
-              <Link href="/contact" className="gf-btn-pill gf-btn-amber" style={{ justifyContent: "center", marginTop: "auto", fontSize: "1rem", padding: "0.9rem", boxShadow: "0 8px 24px rgba(198,244,50,0.15)" }}>Start Free Trial</Link>
+              <Link href="/contact" className="w-btn w-btn-white" style={{ justifyContent: "center", marginTop: "auto" }}>Start Free Trial</Link>
             </motion.div>
-
-            {/* BUSINESS */}
-            <motion.div className="pc pc-plain" {...fadeUp(0.2)}>
-              {/* Spacer to match featured badge height */}
-              <div style={{ height: "2.1rem", marginBottom: "1.5rem" }} />
-              <div className="pc-name">Business</div>
-              <div className="pc-price">{isYearly ? "₹1.7L" : "₹18,999"}</div>
-              <div className="pc-price-sub">per {isYearly ? "year" : "month"} · billed {isYearly ? "annually" : "monthly"}</div>
-              <div className="pc-divider" />
-              <ul className="pc-list">
+            <motion.div className="w-pc" {...reveal(0.16)}>
+              <div style={{ height: "1.5rem", marginBottom: "1.5rem" }} />
+              <div className="w-pc-name">Business</div>
+              <div className="w-pc-price">{formatPrice(region, isYearly ? pricing[region].business.yearly : pricing[region].business.monthly)}</div>
+              <div className="w-pc-sub">per {isYearly ? "year" : "month"}</div>
+              <div className="w-pc-div" />
+              <ul className="w-pc-list">
                 {["Up to 5 websites","Unlimited conversations","Advanced web crawler","Lead scoring insights","Multi-language support"].map(f => (
-                  <li key={f}>
-                    <span className="pc-check"><CheckCircle size={13} color="#C6F432" /></span>
-                    {f}
-                  </li>
+                  <li key={f}><CheckCircle size={14} color="var(--accent-2)" style={{ flexShrink: 0 }} />{f}</li>
                 ))}
               </ul>
-              <Link href="/contact" className="gf-btn-pill" style={{ background: "rgba(255,255,255,0.1)", color: "#fff", fontWeight: 700, justifyContent: "center", marginTop: "auto" }}>Contact Us</Link>
+              <Link href="/contact" className="w-btn w-btn-outline" style={{ justifyContent: "center", marginTop: "auto" }}>Contact Us</Link>
             </motion.div>
           </div>
-
-          {/* Trust strip */}
-          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "2.5rem", marginTop: "3rem", flexWrap: "wrap" }}>
-            {["✓ 15-minute setup","✓ No credit card required","✓ Cancel anytime","✓ Free onboarding call"].map(t => (
-              <span key={t} style={{ fontSize: "0.8rem", fontWeight: 700, color: "rgba(255,255,255,0.3)" }}>{t}</span>
+          <div style={{ display: "flex", justifyContent: "center", gap: "2.5rem", marginTop: "2.5rem", flexWrap: "wrap" }}>
+            {["15-min setup","No credit card","Cancel anytime","Free onboarding call"].map(t => (
+              <span key={t} style={{ fontSize: "0.72rem", fontWeight: 600, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                <CheckCircle size={11} color="var(--accent)" /> {t}
+              </span>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── OPERATIONS (CAPABILITIES) ── */}
-      <section className="section" style={{ paddingTop: "4rem" }}>
-        <div className="inner">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: "1rem" }}>
+      <section style={{ padding: "8rem 2.5rem", background: "var(--bg-alt)", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
+        <div className="w-container">
+          <div className="w-sec-hd">
             <div>
-              <div className="gf-tag">CAPABILITIES</div>
-              <h2 style={{ fontSize: "clamp(2rem, 4vw, 3rem)", fontWeight: 900, lineHeight: 1.1 }}>Powering every part of<br/>your operations</h2>
-              <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.9rem", marginTop: "0.5rem" }}>More than just a chatbot. Redber is a full AI receptionist built for conversions.</p>
+              <span className="w-chip"><span className="w-chip-dot" />Capabilities</span>
+              <h2 className="w-h2" style={{ marginTop: "1rem" }}>Powering every part<br /><span className="w-light">of your ops.</span></h2>
             </div>
-            <Link href="/contact" className="gf-btn-pill gf-btn-dark">Read All Capabilities <ArrowUpRight size={16}/></Link>
+            <Link href="/contact" className="w-btn w-btn-outline" style={{ fontSize: "0.85rem" }}>All Capabilities <ArrowUpRight size={14} /></Link>
           </div>
-
-          <div className="ops-grid">
-            <div className="ops-col">
-              <motion.div className="ops-card" {...fadeUp(0)}>
-                <img src="/img_assets/leads.jpg" alt="AI lead capture dashboard" className="ops-img" />
+          <div className="w-ops-grid">
+            <div className="w-ops-col">
+              <motion.div className="w-ops-img-wrap" {...reveal(0)}>
+                <img src="/img_assets/leads.jpg" alt="AI lead capture" className="w-ops-img" />
               </motion.div>
-              <motion.div className="ops-card ops-yellow" {...fadeUp(0.1)}>
-                <h3>24/7 Appointment Booking</h3>
-                <p>Customers can book directly in the chat. Redber captures date, time, name, and contact — no back-and-forth.</p>
-                <Link href="/contact" className="gf-btn-pill gf-btn-dark" style={{ alignSelf: "flex-start" }}>Learn More</Link>
+              <motion.div className="w-ops-card" {...reveal(0.08)}>
+                <h3 style={{ fontWeight: 700, fontSize: "1.2rem", letterSpacing: "-0.02em", color: "var(--text)" }}>24/7 Appointment Booking</h3>
+                <p style={{ fontSize: "0.875rem", color: "var(--text-sec)", lineHeight: 1.7 }}>Customers book in the chat. Redber captures date, time, name, and contact — no back-and-forth.</p>
+                <Link href="/contact" className="w-btn w-btn-outline" style={{ alignSelf: "flex-start", fontSize: "0.82rem" }}>Learn More</Link>
               </motion.div>
             </div>
-            <div className="ops-col">
-              <motion.div className="ops-card ops-yellow" {...fadeUp(0.2)}>
-                <h3>Instant Smart Lead Capture</h3>
-                <p>Automatically asks for name, phone, and requirements at the right moment. Every lead goes straight into your dashboard.</p>
-                <Link href="/contact" className="gf-btn-pill gf-btn-dark" style={{ alignSelf: "flex-start" }}>Learn More</Link>
+            <div className="w-ops-col">
+              <motion.div className="w-ops-card" {...reveal(0.12)}>
+                <h3 style={{ fontWeight: 700, fontSize: "1.2rem", letterSpacing: "-0.02em", color: "var(--text)" }}>Instant Smart Lead Capture</h3>
+                <p style={{ fontSize: "0.875rem", color: "var(--text-sec)", lineHeight: 1.7 }}>Automatically asks for name, phone, and requirements at exactly the right moment. Every lead goes straight into your dashboard.</p>
+                <Link href="/contact" className="w-btn w-btn-outline" style={{ alignSelf: "flex-start", fontSize: "0.82rem" }}>Learn More</Link>
               </motion.div>
-              <motion.div className="ops-card" {...fadeUp(0.3)}>
-                <img src="/img_assets/multi_ling.jpg" alt="Multi-language AI receptionist" className="ops-img ops-img-tall" />
-                <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(to top, #141414 60%, transparent)", padding: "5rem 2rem 2rem" }}>
-                  <h3 style={{ fontSize: "1.4rem", fontWeight: 900, marginBottom: "0.5rem", color: "#fff" }}>Always-On Multi-Language</h3>
-                  <p style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.5)", marginBottom: "1rem" }}>Your business never closes. Redber responds instantly in English, Arabic, Spanish, French, and more — perfectly interpreting user intent.</p>
-                  <Link href="/contact" className="gf-btn-pill gf-btn-dark px-6">Learn More</Link>
+              <motion.div className="w-ops-img-wrap" style={{ position: "relative", flexGrow: 1 }} {...reveal(0.18)}>
+                <img src="/img_assets/multi_ling.jpg" alt="Multi-language" className="w-ops-img" style={{ height: "100%", minHeight: 260, objectFit: "cover" }} />
+                <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(to top, var(--bg-alt) 45%, transparent)", padding: "3rem 2rem 2rem", borderRadius: "0 0 14px 14px" }}>
+                  <h3 style={{ fontWeight: 700, fontSize: "1.2rem", letterSpacing: "-0.02em", color: "var(--text)", marginBottom: "0.5rem" }}>Always-On Multi-Language</h3>
+                  <p style={{ fontSize: "0.82rem", color: "var(--text-sec)", marginBottom: "1rem", lineHeight: 1.6 }}>Responds in English, Arabic, Spanish, French, and more.</p>
+                  <Link href="/contact" className="w-btn w-btn-outline" style={{ fontSize: "0.78rem" }}>Learn More</Link>
                 </div>
               </motion.div>
             </div>
@@ -829,214 +708,147 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── LIVE BOTS / CHAT BOT LISTING ── */}
-      <section id="demo" className="section" style={{ background: "#0d0d0d" }}>
-        <div className="inner">
-          <div className="text-center mb-10">
-            <div className="gf-tag">LIVE DEMOS</div>
-            <h2 style={{ fontSize: "3rem", fontWeight: 900 }}>Take Redber for a spin</h2>
-            <p style={{ color: "rgba(255,255,255,0.5)" }}>Try interacting with these live AI receptionists to see the capabilities.</p>
-          </div>
-
-          <div className="bots-grid">
+      <section id="demo" className="w-sec">
+        <div className="w-container">
+          <span className="w-chip"><span className="w-chip-dot" />Live Demos</span>
+          <h2 className="w-h2" style={{ marginTop: "1rem", marginBottom: "0.75rem" }}>Take Redber for <span className="w-grad-text">a spin.</span></h2>
+          <p style={{ color: "var(--text-sec)", fontSize: "0.9rem" }}>Try these live AI receptionists to see the capabilities in action.</p>
+          <div className="w-bots-grid">
             {loadingBots ? (
-              <div className="col-span-full py-10 text-center text-gray-500">Loading receptionists...</div>
+              <div style={{ padding: "3rem", color: "var(--text-muted)", fontSize: "0.875rem" }}>Loading receptionists…</div>
             ) : bots.filter(b => b.status === "Active").length === 0 ? (
-              <div className="col-span-full text-center p-10 bg-white/5 rounded-2xl border border-white/10">
-                <Bot className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="font-bold text-xl mb-2">No Live Bots Yet</p>
-                <p className="text-gray-500">Create your first AI receptionist in the admin panel.</p>
+              <div style={{ padding: "3rem", background: "var(--bg-alt)", border: "1px solid var(--border)", borderRadius: 18, textAlign: "center" }}>
+                <Bot size={36} style={{ color: "var(--text-muted)", margin: "0 auto 1rem" }} />
+                <p style={{ fontWeight: 700, color: "var(--text)", marginBottom: "0.4rem" }}>No Live Bots Yet</p>
+                <p style={{ color: "var(--text-sec)", fontSize: "0.82rem" }}>Create your first AI receptionist in the admin panel.</p>
               </div>
-            ) : (
-              bots.filter(b => b.status === "Active" && b.id !== "redber-assistant-001" && !b.name.toLowerCase().includes("redber")).map((bot, idx) => {
-                const industry = (bot.persona_config?.industry || bot.role || "").toLowerCase();
-
-                type BotTheme = { accent: string; textColor: string; borderColor: string; bgGlow: string; userQ: string; botA: string; btnStyle: React.CSSProperties };
-                const theme: BotTheme = (() => {
-                  if (industry.includes("restaurant") || industry.includes("food") || industry.includes("cafe") || industry.includes("dining"))
-                    return { accent: "#ff7043", textColor: "#fff", borderColor: "rgba(255,112,67,0.35)", bgGlow: "rgba(255,112,67,0.08)", btnStyle: { background: "#ff7043", color: "#fff" }, userQ: "Can I book a table for 2 tonight?", botA: "Of course! 🍽️ We have spots at 7pm and 8:30pm. May I get your name to confirm the reservation?" };
-                  if (industry.includes("auto") || industry.includes("car") || industry.includes("dealer") || industry.includes("vehicle"))
-                    return { accent: "#4a9eff", textColor: "#fff", borderColor: "rgba(74,158,255,0.35)", bgGlow: "rgba(74,158,255,0.08)", btnStyle: { background: "#4a9eff", color: "#fff" }, userQ: "Is the 2024 SUV still available?", botA: "Yes, we have 2 left! 🚗 Would you like to schedule a test drive this weekend? I can book it right now." };
-                  if (industry.includes("medical") || industry.includes("clinic") || industry.includes("health") || industry.includes("doctor"))
-                    return { accent: "#26c6a2", textColor: "#fff", borderColor: "rgba(38,198,162,0.35)", bgGlow: "rgba(38,198,162,0.08)", btnStyle: { background: "#26c6a2", color: "#fff" }, userQ: "I need to see a dermatologist", botA: "Absolutely! 👨‍⚕️ Dr. Patel is available Tuesday at 11am or Thursday at 3pm. Which works best for you?" };
-                  if (industry.includes("salon") || industry.includes("beauty") || industry.includes("hair") || industry.includes("spa") || industry.includes("nail"))
-                    return { accent: "#c77dff", textColor: "#fff", borderColor: "rgba(199,125,255,0.35)", bgGlow: "rgba(199,125,255,0.08)", btnStyle: { background: "#c77dff", color: "#fff" }, userQ: "How much is a keratin hair treatment?", botA: "Our keratin treatments start from ₹1,800 ✨ Want me to book you in with Maya, our senior stylist?" };
-                  if (industry.includes("real estate") || industry.includes("property") || industry.includes("realty"))
-                    return { accent: "#7986cb", textColor: "#fff", borderColor: "rgba(121,134,203,0.35)", bgGlow: "rgba(121,134,203,0.08)", btnStyle: { background: "#7986cb", color: "#fff" }, userQ: "Can I view the 3BHK apartment?", botA: "Sure! 🏠 We have viewings Saturday morning and Sunday afternoon. Which day works for you?" };
-                  if (industry.includes("retail") || industry.includes("shop") || industry.includes("ecommerce") || industry.includes("store"))
-                    return { accent: "#26c6da", textColor: "#0d0d0d", borderColor: "rgba(38,198,218,0.35)", bgGlow: "rgba(38,198,218,0.08)", btnStyle: { background: "#26c6da", color: "#0d0d0d" }, userQ: "Do you offer free returns?", botA: "Yes! 📦 We offer hassle-free 30-day returns on all orders. Need help with a specific purchase?" };
-                  return { accent: "#C6F432", textColor: "#0d0d0d", borderColor: "rgba(198,244,50,0.25)", bgGlow: "rgba(198,244,50,0.06)", btnStyle: { background: "#C6F432", color: "#0d0d0d" }, userQ: "What are your business hours?", botA: "We're open Mon–Sat, 9am to 6pm! 😊 I can also book an appointment for you right now if you'd like." };
-                })();
-
-                return (
-                  <motion.div key={bot.id} className="bot-card" style={{ '--card-glow': `${theme.accent}50`, '--card-border': `${theme.accent}70` } as React.CSSProperties} {...fadeUp(idx * 0.1)}>
-                    {/* Accent top bar */}
-                    <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: theme.accent, borderRadius: "1.5rem 1.5rem 0 0" }} />
-
-                    <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1rem" }}>
-                      {bot.avatar ? (
-                        <img src={bot.avatar} alt={bot.name} style={{ width: 48, height: 48, borderRadius: "50%", objectFit: "cover" }} />
-                      ) : (
-                        <div style={{ width: 48, height: 48, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", textTransform: "uppercase", color: theme.textColor, background: theme.accent, fontWeight: 800, fontSize: "1.2rem", boxShadow: `0 4px 16px ${theme.bgGlow}` }}>
-                          {bot.name.charAt(0)}
-                        </div>
-                      )}
-                      <div>
-                        <h3 style={{ fontWeight: 800, fontSize: "1.2rem", lineHeight: 1.1 }}>{bot.name}</h3>
-                        <p style={{ fontSize: "0.7rem", color: theme.accent, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700, marginTop: "0.2rem" }}>{bot.role}</p>
-                      </div>
-                      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "0.3rem" }}>
-                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#10b981", display: "block", boxShadow: "0 0 8px rgba(16,185,129,0.6)" }} />
-                        <span style={{ fontSize: "0.7rem", fontWeight: 700, color: "#10b981" }}>ONLINE</span>
-                      </div>
+            ) : bots.filter(b => b.status === "Active" && b.id !== "redber-assistant-001" && !b.name.toLowerCase().includes("redber")).map((bot, idx) => {
+              const industry = (bot.persona_config?.industry || bot.role || "").toLowerCase();
+              const { userQ, botA } = (() => {
+                if (industry.includes("restaurant") || industry.includes("cafe")) return { userQ: "Can I book a table for 2 tonight?", botA: "Of course! 🍽️ We have spots at 7pm and 8:30pm. May I get your name?" };
+                if (industry.includes("auto") || industry.includes("car")) return { userQ: "Is the 2024 SUV still available?", botA: "Yes, 2 left! 🚗 Want to schedule a test drive this weekend?" };
+                if (industry.includes("medical") || industry.includes("clinic")) return { userQ: "I need to see a dermatologist", botA: "Dr. Patel is available Tuesday 11am or Thursday 3pm. 👨‍⚕️" };
+                if (industry.includes("salon") || industry.includes("beauty")) return { userQ: "How much is a keratin treatment?", botA: "Starts from ₹1,800 ✨ Want me to book with Maya?" };
+                return { userQ: "What are your business hours?", botA: "Open Mon–Sat, 9am–6pm! 😊 I can book you right now if you'd like." };
+              })();
+              return (
+                <motion.div key={bot.id} className="w-bot-card" {...reveal(idx * 0.07)}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.875rem", marginBottom: "1rem" }}>
+                    {bot.avatar
+                      ? <img src={bot.avatar} alt={bot.name} style={{ width: 42, height: 42, borderRadius: "50%", objectFit: "cover" }} />
+                      : <div style={{ width: 42, height: 42, borderRadius: "50%", background: "var(--gradient)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "1rem" }}>{bot.name.charAt(0)}</div>
+                    }
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: "1rem", letterSpacing: "-0.02em", color: "var(--text)" }}>{bot.name}</div>
+                      <div style={{ fontSize: "0.62rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600, marginTop: "0.15rem" }}>{bot.role}</div>
                     </div>
-
-                    <div className="chat-preview-box">
-                      <div className="chat-bubble left">
-                        Hi! I&apos;m {bot.name}. How can I help you today?
-                      </div>
-                      <div className="chat-bubble right" style={{ background: theme.accent, color: theme.textColor }}>
-                        {theme.userQ}
-                      </div>
-                      <div className="chat-bubble left">
-                        {theme.botA}
-                      </div>
+                    <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80", display: "block" }} />
+                      <span style={{ fontSize: "0.58rem", fontWeight: 700, color: "var(--accent)", letterSpacing: "0.06em" }}>ONLINE</span>
                     </div>
-
-                    <Link href={`/chat/${bot.name.toLowerCase()}`} className="gf-btn-pill" style={{ ...theme.btnStyle, width: "100%", justifyContent: "center", paddingTop: "0.8rem", paddingBottom: "0.8rem", fontSize: "0.95rem", display: "inline-flex", alignItems: "center", gap: "0.4rem", borderRadius: "999px", fontWeight: 800, textDecoration: "none" }}>
-                      Chat with {bot.name} <ArrowUpRight size={18} />
-                    </Link>
-                  </motion.div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* ── FAQ ── */}
-      <section id="faq" className="section" style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingBottom: "4rem" }}>
-        <div className="inner">
-          <div className="faq-grid">
-            <div className="faq-left">
-              <div className="gf-tag">FAQ</div>
-              <h2>Frequently<br/>Asked<br/>Questions</h2>
-              <p style={{ color: "rgba(255,255,255,0.4)", marginBottom: "2rem" }}>Got questions? We've got answers. If you can't find what you need here, get in touch.</p>
-              <Link href="/contact" className="gf-btn-pill gf-btn-dark">Contact Us</Link>
-            </div>
-            <div>
-              {faqs.map((faq, i) => (
-                <motion.div key={i} className="faq-item" {...fadeUp(i * 0.1)}>
-                  <button className={`faq-btn ${openFaq === i ? 'open' : ''}`} onClick={() => setOpenFaq(openFaq === i ? null : i)}>
-                    {faq.q}
-                    <ChevronDown size={20} />
-                  </button>
-                  <AnimatePresence>
-                    {openFaq === i && (
-                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden" }}>
-                        <div className="faq-content">{faq.a}</div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                  </div>
+                  <div className="w-chat-preview">
+                    <div className="w-bubble w-bubble-bot">Hi! I&apos;m {bot.name}. How can I help you today?</div>
+                    <div className="w-bubble w-bubble-user">{userQ}</div>
+                    <div className="w-bubble w-bubble-bot">{botA}</div>
+                  </div>
+                  <Link href={`/chat/${bot.name.toLowerCase()}`} className="w-btn w-btn-primary" style={{ display: "flex", justifyContent: "center", fontSize: "0.85rem" }}>
+                    Chat with {bot.name} <ArrowUpRight size={14} />
+                  </Link>
                 </motion.div>
-              ))}
-            </div>
+              );
+            })}
           </div>
         </div>
       </section>
 
-      <footer className="gf-footer">
-        {/* Top section — big CTA + links */}
-        <div className="footer-top">
-          <div className="inner" style={{ position: "relative", zIndex: 2 }}>
-            <div className="footer-grid-top">
-              {/* Left: Big CTA */}
+      <section id="faq" style={{ padding: "8rem 2.5rem", background: "var(--bg-alt)", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
+        <div className="w-container">
+          <div style={{ textAlign: "center", marginBottom: "4rem" }}>
+            <span className="w-chip" style={{ margin: "0 auto" }}><span className="w-chip-dot" />FAQ</span>
+            <h2 className="w-h2" style={{ marginTop: "1rem" }}>Frequently asked <span className="w-grad-text">questions</span></h2>
+            <p style={{ color: "var(--text-sec)", fontSize: "0.875rem", maxWidth: 380, margin: "1rem auto 0", lineHeight: 1.75 }}>Got questions? We&apos;ve got answers. Can&apos;t find what you need? Get in touch.</p>
+          </div>
+          <div className="w-faq-wrap">
+            {faqs.map((faq, i) => (
+              <motion.div key={i} className="w-faq-row" {...reveal(i * 0.06)}>
+                <button className={`w-faq-btn${openFaq === i ? " open" : ""}`} onClick={() => setOpenFaq(openFaq === i ? null : i)}>
+                  {faq.q} <ChevronDown size={17} />
+                </button>
+                <AnimatePresence>
+                  {openFaq === i && (
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden" }}>
+                      <div className="w-faq-body">{faq.a}</div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            ))}
+          </div>
+          <div style={{ textAlign: "center", marginTop: "3rem" }}>
+            <Link href="/contact" className="w-btn w-btn-primary">Contact Us <ArrowRight size={14} /></Link>
+          </div>
+        </div>
+      </section>
+
+      <footer className="w-footer">
+        <div className="w-footer-top">
+          <div className="w-container">
+            <div className="w-footer-grid">
               <div>
-                <div className="gf-tag" style={{ marginBottom: "1.5rem" }}>GET STARTED</div>
-                <h2 style={{ fontSize: "clamp(2.5rem, 5vw, 4rem)", fontWeight: 900, lineHeight: 1.05, letterSpacing: "-0.04em", color: "#fff", marginBottom: "1.5rem" }}>
-                  Ready to put AI<br/>to work?
-                </h2>
-                <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "1rem", lineHeight: 1.7, marginBottom: "2rem", maxWidth: 400 }}>
+                <span style={{ fontSize: "0.62rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.18em", color: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--gradient)", display: "block" }} />Get Started
+                </span>
+                <h2 className="w-footer-h">Ready to put<br /><span className="w-footer-muted">AI to work?</span></h2>
+                <p style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.875rem", lineHeight: 1.75, marginBottom: "2rem", maxWidth: 340 }}>
                   Join businesses using Redber to automate customer conversations, capture leads, and grow — 24/7.
                 </p>
-                <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-                  <Link href="/contact" className="gf-btn-pill gf-btn-amber" style={{ padding: "0.9rem 2rem", fontSize: "1rem" }}>Start Free Trial <ArrowRight size={16} /></Link>
-                  <Link href="#demo" className="gf-btn-pill gf-btn-dark" style={{ padding: "0.9rem 2rem", fontSize: "1rem" }}>See Live Demo</Link>
+                <div style={{ display: "flex", gap: "0.875rem", flexWrap: "wrap" }}>
+                  <Link href="/contact" className="w-btn w-btn-primary">Start Free Trial <ArrowRight size={14} /></Link>
+                  <a href="#demo" className="w-btn w-btn-ghost-dark">See Live Demo</a>
                 </div>
               </div>
-
-              {/* Right: Links */}
-              <div className="footer-links footer-grid-links">
-                <div>
-                  <h4>Product</h4>
-                  <ul>
-                    <li><Link href="#how-it-works">How It Works</Link></li>
-                    <li><Link href="#features">Features</Link></li>
-                    <li><Link href="#pricing">Pricing</Link></li>
-                    <li><Link href="#demo">Live Demo</Link></li>
-                    <li><Link href="#faq">FAQ</Link></li>
-                  </ul>
-                </div>
-                <div>
-                  <h4>Company</h4>
-                  <ul>
-                    <li><Link href="/about">About Us</Link></li>
-                    <li><Link href="/blog">Blog</Link></li>
-                    <li><Link href="/careers">Careers</Link></li>
-                    <li><Link href="/contact">Contact</Link></li>
-                  </ul>
-                </div>
-                <div>
-                  <h4>Legal</h4>
-                  <ul>
-                    <li><Link href="/privacy-policy">Privacy Policy</Link></li>
-                    <li><Link href="/terms-of-service">Terms of Service</Link></li>
-                    <li><Link href="/cookies">Cookie Policy</Link></li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-
-            {/* Stats row */}
-            <div className="footer-stats-row">
-              {[{n:"0.25s",l:"Avg Response Time"},{n:"24/7",l:"Always Online"},{n:"∞",l:"Concurrent Calls"},{n:"< 1 min",l:"Setup Time"}].map(({n,l}) => (
-                <div key={l}>
-                  <div style={{ fontSize: "2rem", fontWeight: 900, color: "#C6F432", letterSpacing: "-0.02em" }}>{n}</div>
-                  <div style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.35)", fontWeight: 600, marginTop: "0.2rem" }}>{l}</div>
-                </div>
-              ))}
-              <div style={{ marginLeft: "auto", display: "flex", gap: "0.75rem", alignItems: "center" }}>
+              <div className="w-footer-links-grid w-footer-col">
                 {[
-                  { icon: <Facebook size={18} />, href: "#", label: "Facebook" }
-                ].map((item, i) => (
-                  <a key={i} href={item.href} aria-label={item.label} style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.5)", textDecoration: "none", transition: "all 0.2s" }}
-                     onMouseOver={(e) => { e.currentTarget.style.color = "#C6F432"; e.currentTarget.style.borderColor = "rgba(198,244,50,0.3)"; }}
-                     onMouseOut={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.5)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; }}
-                  >
-                    {item.icon}
-                  </a>
+                  ["Product", [["#how-it-works","How It Works"],["#features","Features"],["#pricing","Pricing"],["#demo","Live Demo"],["#faq","FAQ"]]],
+                  ["Company", [["/about","About Us"],["/blog","Blog"],["/careers","Careers"],["/contact","Contact"]]],
+                  ["Legal", [["/privacy-policy","Privacy"],["/terms-of-service","Terms"],["/cookies","Cookies"]]]
+                ].map(([col, links]) => (
+                  <div key={col as string}>
+                    <h5>{col as string}</h5>
+                    <ul>{(links as string[][]).map(([href, label]) => <li key={href}><Link href={href}>{label}</Link></li>)}</ul>
+                  </div>
                 ))}
               </div>
             </div>
+            <div className="w-footer-stats">
+              {[{n:"0.25s",l:"Avg Response"},{n:"24/7",l:"Always Online"},{n:"∞",l:"Concurrent"},{n:"<1min",l:"Setup"}].map(({n,l}) => (
+                <div key={l}><div className="w-footer-stat-n">{n}</div><div className="w-footer-stat-l">{l}</div></div>
+              ))}
+              <div style={{ marginLeft: "auto" }}>
+                <a href="#" aria-label="Facebook" style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.3)", textDecoration: "none", transition: "all 0.2s" }}
+                  onMouseOver={e => { e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)"; }}
+                  onMouseOut={e => { e.currentTarget.style.color = "rgba(255,255,255,0.3)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; }}>
+                  <Facebook size={15} />
+                </a>
+              </div>
+            </div>
           </div>
         </div>
-
-        {/* Bottom bar */}
-        <div className="footer-bottom">
-          <div className="inner" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", flexWrap: "wrap", gap: "1rem" }}>
-            <img src="/logo/Redber Logo white.svg" alt="Redber" style={{ height: "auto", width: 100 }}
-              onError={(e) => { (e.target as HTMLImageElement).src = "/logo/Redber Logo Black.svg"; (e.target as HTMLImageElement).style.filter = "invert(1)"; }}
-            />
-            <span style={{ color: "rgba(255,255,255,0.25)", fontSize: "0.82rem", fontWeight: 600 }}>© 2026 Redber AI · Built by <a href="https://acenzos.com" style={{ color: "#C6F432", textDecoration: "none" }}>Acenzos</a></span>
+        <div className="w-footer-bottom">
+          <div className="w-container" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", flexWrap: "wrap", gap: "1rem" }}>
+            <img src="/logo/Redber Logo white.svg" alt="Redber" style={{ width: 82, height: "auto" }} />
+            <span style={{ color: "rgba(255,255,255,0.18)", fontSize: "0.75rem" }}>
+              © 2026 Redber AI · Built by <a href="https://acenzos.com" style={{ color: "rgba(255,255,255,0.4)", textDecoration: "none" }}>Acenzos</a>
+            </span>
             <div style={{ display: "flex", gap: "1.5rem" }}>
-              <Link href="/privacy-policy" style={{ color: "rgba(255,255,255,0.25)", fontSize: "0.82rem", textDecoration: "none", fontWeight: 600 }}>Privacy</Link>
-              <Link href="/terms-of-service" style={{ color: "rgba(255,255,255,0.25)", fontSize: "0.82rem", textDecoration: "none", fontWeight: 600 }}>Terms</Link>
-              <Link href="/cookies" style={{ color: "rgba(255,255,255,0.25)", fontSize: "0.82rem", textDecoration: "none", fontWeight: 600 }}>Cookies</Link>
+              {[["Privacy","/privacy-policy"],["Terms","/terms-of-service"],["Cookies","/cookies"]].map(([l,h]) => (
+                <Link key={h} href={h} style={{ color: "rgba(255,255,255,0.18)", fontSize: "0.75rem", textDecoration: "none" }}>{l}</Link>
+              ))}
             </div>
           </div>
         </div>
       </footer>
-      <RedberMascot />
     </>
   );
 }
