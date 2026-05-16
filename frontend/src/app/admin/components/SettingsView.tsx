@@ -152,8 +152,10 @@ export default function SettingsView() {
     const fetchBots = () => {
         if (!user) return;
         setLoading(true);
-        const ids = user.botIds?.join(",") || "NONE";
-        const botIdsParam = `?bot_ids=${ids}`;
+        // super admin sends no filter → gets all bots. tenants filter by their botIds.
+        const botIdsParam = user.role === "super_admin"
+            ? ""
+            : `?bot_ids=${user.botIds?.join(",") || "NONE"}`;
         authFetch(`${API_BASE}/api/admin/bots${botIdsParam}`)
             .then(res => res.json())
             .then(data => {
@@ -477,6 +479,7 @@ export default function SettingsView() {
                                                 <option value="Inactive">Inactive</option>
                                             </select>
                                         </div>
+                                        {user?.role === "super_admin" && (
                                         <div className="bg-white/5 border border-white/10 rounded-xl p-4 flex items-center justify-between">
                                             <div>
                                                 <h3 className="text-sm font-bold text-white">Show in Redber Live Demo</h3>
@@ -490,6 +493,7 @@ export default function SettingsView() {
                                                 <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-md transform transition-transform duration-300 ${editingBot.is_public ? 'translate-x-5' : 'translate-x-0'}`} />
                                             </button>
                                         </div>
+                                        )}
                                         <div>
                                             <label className="block text-sm font-medium text-gray-400 mb-1">Core Identity Prompt</label>
                                             <textarea value={editingBot.persona_prompt} onChange={e => setEditingBot({ ...editingBot, persona_prompt: e.target.value })}
