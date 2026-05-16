@@ -608,7 +608,23 @@ export default function Home() {
           <div style={{ textAlign: "center" }}>
             <span className="w-chip" style={{ margin: "0 auto" }}><span className="w-chip-dot" />Pricing</span>
             <h2 className="w-h2" style={{ marginTop: "1rem", marginBottom: "1rem" }}>Simple, <span className="w-grad-text">transparent</span> pricing</h2>
-            <p style={{ color: "var(--text-sec)", fontSize: "0.9rem", maxWidth: 340, margin: "0 auto 2.5rem" }}>Start free, scale as you grow. No hidden fees.</p>
+            <p style={{ color: "var(--text-sec)", fontSize: "0.9rem", maxWidth: 340, margin: "0 auto 2rem" }}>Start free, scale as you grow. No hidden fees.</p>
+
+            {/* Region switcher */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem", marginBottom: "1.75rem", flexWrap: "wrap" }}>
+              {([["INR","🇮🇳","India"],["AED","🇦🇪","Gulf / GCC"],["USD","🇺🇸","USA & Canada"],["GBP","🇬🇧","United Kingdom"]] as const).map(([r, flag, label]) => (
+                <button key={r} onClick={() => setRegion(r as Region)}
+                  style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", padding: "0.32rem 0.85rem", borderRadius: 999, border: `1.5px solid ${region === r ? "var(--accent)" : "var(--border)"}`, background: region === r ? "var(--accent-light)" : "transparent", color: region === r ? "var(--accent)" : "var(--text-muted)", fontSize: "0.76rem", fontWeight: 700, cursor: "pointer", fontFamily: "'Plus Jakarta Sans', sans-serif", transition: "all 0.18s" }}>
+                  <span>{flag}</span>{r}
+                </button>
+              ))}
+            </div>
+            <p style={{ fontSize: "0.72rem", fontWeight: 600, color: "var(--text-muted)", marginBottom: "2rem" }}>
+              Prices shown for{" "}
+              {region === "INR" ? "India" : region === "AED" ? "Gulf / GCC" : region === "USD" ? "USA & Canada" : "United Kingdom"}{" "}
+              setup &amp; billing
+            </p>
+
             <div className="w-toggle" style={{ margin: "0 auto" }}>
               <div className="w-toggle-pill" style={{ left: isYearly ? "calc(50% + 0.22rem)" : "0.22rem" }} />
               <button className="w-toggle-btn" onClick={() => setIsYearly(false)} style={{ color: !isYearly ? "var(--accent)" : "var(--text-muted)" }}>Monthly</button>
@@ -658,13 +674,6 @@ export default function Home() {
               </ul>
               <Link href="/contact" className="w-btn w-btn-outline" style={{ justifyContent: "center", marginTop: "auto" }}>Contact Us</Link>
             </motion.div>
-          </div>
-          <div style={{ display: "flex", justifyContent: "center", gap: "2.5rem", marginTop: "2.5rem", flexWrap: "wrap" }}>
-            {["15-min setup","No credit card","Cancel anytime","Free onboarding call"].map(t => (
-              <span key={t} style={{ fontSize: "0.72rem", fontWeight: 600, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                <CheckCircle size={11} color="var(--accent)" /> {t}
-              </span>
-            ))}
           </div>
         </div>
       </section>
