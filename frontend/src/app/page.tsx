@@ -560,16 +560,6 @@ export default function Home() {
                 <p style={{ fontSize: "0.875rem", color: "rgba(255,255,255,0.65)", lineHeight: 1.65 }}>Set rules, compliance limits, and persona — Redber stays strictly on-script, every time.</p>
               </div>
             </motion.div>
-            <motion.div className="w-card" style={{ gridColumn: "span 4" }} {...reveal(0.22)}>
-              <div className="w-icon-box"><Link2 size={18} /></div>
-              <h3 className="w-h3" style={{ marginBottom: "0.6rem" }}>Seamless Integrations</h3>
-              <p style={{ fontSize: "0.875rem", color: "var(--text-sec)", lineHeight: 1.65, marginBottom: "1.25rem" }}>Connects with your website, phone, WhatsApp, and CRM in minutes.</p>
-              <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
-                {["🌐 Web", "📱 Phone", "💬 WhatsApp", "📊 CRM"].map(t => (
-                  <span key={t} style={{ fontSize: "0.72rem", fontWeight: 600, background: "var(--accent-light)", border: "1px solid var(--accent-border)", padding: "0.3rem 0.75rem", borderRadius: 8, color: "var(--accent)" }}>{t}</span>
-                ))}
-              </div>
-            </motion.div>
           </div>
         </div>
       </section>
@@ -675,6 +665,69 @@ export default function Home() {
               <Link href="/contact" className="w-btn w-btn-outline" style={{ justifyContent: "center", marginTop: "auto" }}>Contact Us</Link>
             </motion.div>
           </div>
+        </div>
+      </section>
+
+      {/* Trial Period Section */}
+      <section style={{ padding: "5rem 2.5rem", background: "var(--bg-dark)", position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at 60% 50%, rgba(37,99,235,0.18) 0%, transparent 65%)", pointerEvents: "none" }} />
+        <div className="w-container" style={{ position: "relative", zIndex: 1 }}>
+          <motion.div {...reveal(0)} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "4rem", alignItems: "center" }}>
+            <div>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", background: "rgba(37,99,235,0.15)", border: "1px solid rgba(37,99,235,0.3)", borderRadius: 999, padding: "0.3rem 0.9rem", marginBottom: "1.5rem" }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80", display: "block" }} />
+                <span style={{ fontSize: "0.62rem", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.6)" }}>Zero Risk</span>
+              </div>
+              <h2 style={{ fontSize: "clamp(1.8rem, 3.5vw, 3rem)", fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1.08, color: "#fff", marginBottom: "1rem" }}>
+                Try Redber free for <span style={{ background: "linear-gradient(135deg,#2563EB,#0EA5E9)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>14 days.</span>
+              </h2>
+              <p style={{ fontSize: "0.95rem", color: "rgba(255,255,255,0.45)", lineHeight: 1.75, maxWidth: 480, marginBottom: "2.5rem" }}>
+                We set it up on your website for you — no code, no credit card. See real customers engaging with your AI receptionist before you pay a single rupee.
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", maxWidth: 480, marginBottom: "2.5rem" }}>
+                {[
+                  { icon: "🚀", title: "Live in 24 hours", sub: "We handle the full setup for you" },
+                  { icon: "💳", title: "No credit card", sub: "No payment details required" },
+                  { icon: "🤝", title: "We train the AI", sub: "Using your menus, FAQs & pricing" },
+                  { icon: "❌", title: "Cancel anytime", sub: "No contracts, no lock-in" },
+                ].map((item, i) => (
+                  <div key={i} style={{ display: "flex", gap: "0.75rem", alignItems: "flex-start" }}>
+                    <span style={{ fontSize: "1.1rem", lineHeight: 1, marginTop: "0.1rem" }}>{item.icon}</span>
+                    <div>
+                      <div style={{ fontSize: "0.82rem", fontWeight: 700, color: "#fff", marginBottom: "0.15rem" }}>{item.title}</div>
+                      <div style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.35)", lineHeight: 1.5 }}>{item.sub}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: "0.875rem", flexWrap: "wrap", alignItems: "center" }}>
+                <Link href="/contact?subject=14-Day Free Trial&message=I'd like to start my free 14-day trial of Redber." className="w-btn w-btn-primary" style={{ padding: "0.9rem 2rem", fontSize: "0.9rem" }}>
+                  Start My Free Trial <ArrowRight size={15} />
+                </Link>
+                <span style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.2)", fontWeight: 600 }}>No card · No code · We set it up</span>
+              </div>
+            </div>
+            <motion.div initial={{ opacity: 0, scale: 0.9 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} transition={{ duration: 0.6 }}
+              style={{ display: "flex", flexDirection: "column", gap: "0", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "2rem", minWidth: 220 }}>
+              {[
+                { day: "Day 1", action: "We go live on your site" },
+                { day: "Day 3", action: "First leads captured" },
+                { day: "Day 7", action: "Review your dashboard" },
+                { day: "Day 14", action: "Decide — no pressure" },
+              ].map((item, i, arr) => (
+                <div key={i} style={{ display: "flex", gap: "1rem", alignItems: "flex-start", paddingBottom: i < arr.length - 1 ? "1.25rem" : 0, position: "relative" }}>
+                  {i < arr.length - 1 && <div style={{ position: "absolute", left: "1.6rem", top: "2rem", bottom: 0, width: 1, background: "rgba(255,255,255,0.08)" }} />}
+                  <div style={{ width: 32, height: 32, borderRadius: "50%", background: i === 3 ? "linear-gradient(135deg,#2563EB,#0EA5E9)" : "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, zIndex: 1 }}>
+                    <span style={{ fontSize: "0.58rem", fontWeight: 800, color: i === 3 ? "#fff" : "rgba(255,255,255,0.4)", letterSpacing: "0.04em" }}>{i + 1}</span>
+                  </div>
+                  <div style={{ paddingTop: "0.35rem" }}>
+                    <div style={{ fontSize: "0.6rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: "rgba(255,255,255,0.25)", marginBottom: "0.2rem" }}>{item.day}</div>
+                    <div style={{ fontSize: "0.84rem", fontWeight: 600, color: i === 3 ? "#fff" : "rgba(255,255,255,0.55)" }}>{item.action}</div>
+                  </div>
+                </div>
+              ))}
+            </motion.div>
+          </motion.div>
         </div>
       </section>
 
