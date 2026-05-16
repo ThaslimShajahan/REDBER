@@ -933,6 +933,7 @@ async def create_bot(request: BotCreateRequest, current_user: dict = Depends(get
     supabase = get_supabase_client()
     if not supabase:
         raise HTTPException(status_code=500, detail="Database credentials missing.")
+    # Create the bot in Supabase — this must succeed
     try:
         supabase.table("bots").insert({
             "id": request.id,
@@ -947,10 +948,14 @@ async def create_bot(request: BotCreateRequest, current_user: dict = Depends(get
             "persona_config": request.persona_config,
             "allowed_domains": request.allowed_domains,
         }).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-        # Link bot to creator's Firestore botIds so they can see it in their dashboard
-        uid = current_user.get("uid")
-        if uid:
+    # Best-effort: link bot to creator's Firestore botIds (tenant isolation)
+    # Failure here must NOT block the bot creation response
+    uid = current_user.get("uid")
+    if uid:
+        try:
             from ..dependencies.auth import _ensure_firebase_admin
             if _ensure_firebase_admin():
                 from firebase_admin import firestore as fstore
@@ -959,10 +964,10 @@ async def create_bot(request: BotCreateRequest, current_user: dict = Depends(get
                 user_ref = db_fs.collection("users").document(uid)
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, lambda: user_ref.update({"botIds": fstore.ArrayUnion([request.id])}))
+        except Exception as fs_err:
+            logger.warning("[BOT CREATE] Firestore botIds update skipped for uid=%s: %s", uid, fs_err)
 
-        return {"status": "created", "id": request.id}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return {"status": "created", "id": request.id}
 
 
 @router.delete("/bots/{bot_id}")
@@ -970,12 +975,16 @@ async def delete_bot(bot_id: str, current_user: dict = Depends(get_current_user)
     supabase = get_supabase_client()
     if not supabase:
         raise HTTPException(status_code=500, detail="Database credentials missing.")
+    # Delete from Supabase — must succeed
     try:
         supabase.table("bots").delete().eq("id", bot_id).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-        # Remove from owner's Firestore botIds
-        uid = current_user.get("uid")
-        if uid:
+    # Best-effort: remove from owner's Firestore botIds
+    uid = current_user.get("uid")
+    if uid:
+        try:
             from ..dependencies.auth import _ensure_firebase_admin
             if _ensure_firebase_admin():
                 from firebase_admin import firestore as fstore
@@ -984,10 +993,10 @@ async def delete_bot(bot_id: str, current_user: dict = Depends(get_current_user)
                 user_ref = db_fs.collection("users").document(uid)
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, lambda: user_ref.update({"botIds": fstore.ArrayRemove([bot_id])}))
+        except Exception as fs_err:
+            logger.warning("[BOT DELETE] Firestore botIds update skipped for uid=%s: %s", uid, fs_err)
 
-        return {"status": "deleted"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return {"status": "deleted"}
 
 
 # ====================
